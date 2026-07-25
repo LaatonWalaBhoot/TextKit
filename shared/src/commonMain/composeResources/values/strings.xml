@@ -11,6 +11,7 @@
     <string name="document_text">Document</string>
     <string name="ordered_list_text">Ordered list</string>
     <string name="bulleted_list_text">Bulleted list</string>
+    <string name="align_text">Align</string>
     <string name="undo_text">Undo</string>
     <string name="redo_text">Redo</string>
     <string name="text_color_text">Text color</string>
@@ -20,6 +21,10 @@
     <string name="url_label">Url</string>
     <string name="edit_label">Edit</string>
     <string name="remove_label">Remove</string>
+    <string name="left_align_text">Left align</string>
+    <string name="center_align_text">Center align</string>
+    <string name="right_align_text">Right align</string>
+    <string name="justify_align_text">Justify align</string>
 
     <string name="table_merge_cells_text">Merge cells</string>
     <string name="table_split_cell_text">Split cell</string>

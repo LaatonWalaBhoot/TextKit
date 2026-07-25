@@ -18,19 +18,19 @@ object TextTransaction {
     ): Pair<Boolean, TextRange> {
         val (selection, transactions) = when (actionModel) {
             is TextEditorAction.TextAdded -> {
-                val lines = manager.transaction.getLineContentWithNeigborParagraphs(actionModel.offset, actionModel.offset)
+                val lines = manager.transaction.getLineContentWithNeighborParagraphs(actionModel.offset, actionModel.offset)
                 TextInsertedTransaction.addText(lines, actionModel)
             }
 
             is TextEditorAction.TextRemoved -> {
                 val lines =
-                    manager.transaction.getLineContentWithNeigborParagraphs(actionModel.offset, actionModel.offset + actionModel.length)
+                    manager.transaction.getLineContentWithNeighborParagraphs(actionModel.offset, actionModel.offset + actionModel.length)
                 TextDeletedTransaction.deleteText(lines, actionModel, manager)
             }
 
             is TextEditorAction.TextUpdated -> {
                 val lines =
-                    manager.transaction.getLineContentWithNeigborParagraphs(
+                    manager.transaction.getLineContentWithNeighborParagraphs(
                         actionModel.offset,
                         actionModel.offset + actionModel.removeLength
                     )

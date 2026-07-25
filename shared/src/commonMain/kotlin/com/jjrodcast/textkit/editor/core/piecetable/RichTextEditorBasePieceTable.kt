@@ -6,6 +6,7 @@ import com.jjrodcast.textkit.editor.core.models.PieceParagraph
 import com.jjrodcast.textkit.editor.core.models.TextEditorDocumentModel
 import com.jjrodcast.textkit.editor.core.models.TextEditorModel
 import com.jjrodcast.textkit.editor.core.parser.Mark
+import com.jjrodcast.textkit.editor.core.parser.TextAlign
 import com.jjrodcast.textkit.editor.core.piecetable.models.RichPiece
 import com.jjrodcast.textkit.editor.core.piecetable.models.RichPieceTransaction
 import com.jjrodcast.textkit.editor.core.piecetable.models.Source
@@ -384,6 +385,31 @@ internal abstract class RichTextEditorBasePieceTable :
         return rope.findFirstLineBreakEndFrom(endPieceIndex)
     }
 
+    /**
+     * Sets the paragraph-level [textAlign] on every piece of each paragraph that intersects
+     * [[start], [end]]. Alignment is a block attribute stored per-piece (see [RichPiece.textAlign]),
+     * so applying it means retagging the *whole* paragraph — not just the selected characters —
+     * which also makes it work with a collapsed caret.
+     *
+     * Each affected piece is swapped in-place via [PieceRope.replaceAt] with a same-length
+     * `copy(textAlign = …)`; the character buffers and offsets are untouched, so the text cache stays
+     * valid (mirrors [updateDecorator]). O(R log P) for R affected pieces. Returns whether any piece
+     * changed.
+     */
+    internal fun updateTextAlign(start: Int, end: Int, textAlign: TextAlign): Boolean {
+        var changed = false
+        getLineContent(start, end).paragraphsInSelectedRange.fastForEach { paragraph ->
+            paragraph.pieces.fastForEach { model ->
+                if (model.piece.textAlign == textAlign) return@fastForEach
+                val index = getIndexOf(model)
+                if (index < 0) return@fastForEach
+                rope.replaceAt(index, model.piece.copy(textAlign = textAlign))
+                changed = true
+            }
+        }
+        return changed
+    }
+
     internal fun updateDecorator(model: TextEditorModel): Boolean {
         val piece = model.piece
         return when (val decorator = piece.decorator) {
@@ -451,6 +477,7 @@ internal abstract class RichTextEditorBasePieceTable :
                         marks = model.piece.marks,
                         decorator = model.piece.decorator,
                         token = model.piece.token,
+                        textAlign = model.piece.textAlign,
                         isLineBreak = pieceText.isLineBreak(),
                         endsWithLineBreak = pieceText.endsWithLineBreak()
                     )

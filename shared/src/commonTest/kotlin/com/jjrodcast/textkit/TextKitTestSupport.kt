@@ -7,6 +7,7 @@ import com.jjrodcast.textkit.editor.core.TextKitEditorManager
 import com.jjrodcast.textkit.editor.core.parser.LinkAttrs
 import com.jjrodcast.textkit.editor.core.parser.LinkMark
 import com.jjrodcast.textkit.editor.core.parser.Mark
+import com.jjrodcast.textkit.editor.core.parser.TextAlign
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorAction
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorSelectedMark
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorTransactionType
@@ -96,6 +97,17 @@ internal fun TextKitEditorManager.toListItem(
     prevSelectedMark = TextEditorSelectedMark(listItemSelectedValue = from),
     currSelectedMark = TextEditorSelectedMark(listItemSelectedValue = to),
 ).first
+
+/** Set the paragraph alignment over [range] (applies to every paragraph the range touches). */
+internal fun TextKitEditorManager.setTextAlign(
+    range: TextRange,
+    textAlign: TextAlign
+): Pair<Boolean, TextRange> = updateDocument(
+    selection = range,
+    prevSelectedMark = TextEditorSelectedMark.NONE,
+    currSelectedMark = TextEditorSelectedMark.NONE,
+    transactionType = TextEditorTransactionType.Alignment(textAlign)
+)
 
 /** Set (or clear, with `null`) the text color over [range]. */
 internal fun TextKitEditorManager.setColor(range: TextRange, color: String?): Boolean =

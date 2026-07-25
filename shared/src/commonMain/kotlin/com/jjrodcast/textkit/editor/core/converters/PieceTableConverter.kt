@@ -17,7 +17,9 @@ import com.jjrodcast.textkit.editor.core.parser.ListAttrs
 import com.jjrodcast.textkit.editor.core.parser.ListItem
 import com.jjrodcast.textkit.editor.core.parser.OrderedList
 import com.jjrodcast.textkit.editor.core.parser.Paragraph
+import com.jjrodcast.textkit.editor.core.parser.ParagraphAttrs
 import com.jjrodcast.textkit.editor.core.parser.TaskList
+import com.jjrodcast.textkit.editor.core.parser.TextAlign
 import com.jjrodcast.textkit.editor.core.parser.TaskListAttrs
 import com.jjrodcast.textkit.editor.core.parser.TaskListItem
 import com.jjrodcast.textkit.editor.core.parser.Text
@@ -307,7 +309,10 @@ internal object PieceTableConverter {
                 else -> EmptyParagraph
             }
         } else {
-            Paragraph(item.getParagraphContent())
+            Paragraph(
+                attrs = ParagraphAttrs(textAlign = item.textStyled.resolveTextAlign()),
+                content = item.getParagraphContent()
+            )
         }
     }
 
@@ -528,6 +533,7 @@ internal object PieceTableConverter {
 
         // 2. Return the list of paragraphs
         return internalParagraphs.fastMap { paragraph ->
+            val textAlign = paragraph.styledText.resolveTextAlign()
             val texts = paragraph.styledText
                 .mapNotNull { if (it.isDecorator) null else it }
                 .fastMap { it.toInlineNode() }
@@ -537,11 +543,20 @@ internal object PieceTableConverter {
                 1 -> { // When the text doesn't have content
                     val first = texts.first()
                     if (first is Text && first.text.isEmpty()) EmptyParagraph
-                    else Paragraph(content = texts)
+                    else Paragraph(attrs = ParagraphAttrs(textAlign = textAlign), content = texts)
                 }
 
-                else -> Paragraph(content = texts)
+                else -> Paragraph(attrs = ParagraphAttrs(textAlign = textAlign), content = texts)
             }
         }
     }
+
+    /**
+     * Resolves a paragraph's alignment from its pieces. Alignment is a block attribute stamped onto
+     * every piece of the paragraph (see [com.jjrodcast.textkit.editor.core.piecetable.models.RichPiece.textAlign]),
+     * but an edit can leave a freshly typed piece at the default while its neighbours keep the
+     * paragraph's value — so the first non-default value wins, falling back to [TextAlign.Left].
+     */
+    private fun List<TextEditorModel>.resolveTextAlign(): TextAlign =
+        firstOrNull { it.piece.textAlign != TextAlign.Left }?.piece?.textAlign ?: TextAlign.Left
 }

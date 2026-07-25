@@ -20,6 +20,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Article
+import androidx.compose.material.icons.automirrored.rounded.FormatAlignLeft
 import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
@@ -68,6 +69,7 @@ import com.jjrodcast.textkit.ui.state.rememberTextKitFormattingBarState
 import com.jjrodcast.textkit.ui.utils.TextKitPickerPallete
 import org.jetbrains.compose.resources.stringResource
 import textkit.shared.generated.resources.Res
+import textkit.shared.generated.resources.align_text
 import textkit.shared.generated.resources.bold_text
 import textkit.shared.generated.resources.bulleted_list_text
 import textkit.shared.generated.resources.document_text
@@ -120,6 +122,7 @@ fun TextKitFormattingBar(
     onDocumentClick: (Boolean) -> Unit = {},
     onOrderedListClick: (Boolean) -> Unit = {},
     onBulletedListClick: (Boolean) -> Unit = {},
+    onTextAlignClick: (Rect) -> Unit = {},
     onTextAndColorClick: (Rect) -> Unit = {},
     onUndoClick: () -> Unit = {},
     onRedoClick: () -> Unit = {},
@@ -141,6 +144,7 @@ fun TextKitFormattingBar(
         onDocumentClick = onDocumentClick,
         onOrderedListClick = onOrderedListClick,
         onBulletedListClick = onBulletedListClick,
+        onTextAlignClick = onTextAlignClick,
         onUndoClick = onUndoClick,
         onRedoClick = onRedoClick,
         canUndo = canUndo,
@@ -165,12 +169,14 @@ fun TextKitFormattingBarInternal(
     onDocumentClick: (Boolean) -> Unit = {},
     onOrderedListClick: (Boolean) -> Unit = {},
     onBulletedListClick: (Boolean) -> Unit = {},
+    onTextAlignClick: (Rect) -> Unit = {},
     onUndoClick: () -> Unit = {},
     onRedoClick: () -> Unit = {},
     canUndo: Boolean = false,
     canRedo: Boolean = false
 ) {
     var textSizeAndColorBounds by remember { mutableStateOf(Rect.Zero) }
+    var textAlignBounds by remember { mutableStateOf(Rect.Zero) }
 
     Card(
         modifier = modifier.padding(4.dp),
@@ -260,6 +266,17 @@ fun TextKitFormattingBarInternal(
                 onClick = onBulletedListClick,
                 value = barState.isBulletedList,
                 backgroundColor = selectedColor
+            )
+            TextKitFormattingSeparator()
+            TextKitTooltipFormattingItem(
+                tooltipText = stringResource(Res.string.align_text),
+                rememberVectorPainter(Icons.AutoMirrored.Rounded.FormatAlignLeft),
+                value = false,
+                isExpandable = true,
+                onClick = { onTextAlignClick(textAlignBounds) },
+                modifier = Modifier.onGloballyPositioned {
+                    textAlignBounds = it.boundsInWindow()
+                }
             )
             TextKitFormattingSeparator()
             TextKitFormattingDivider()
@@ -419,7 +436,7 @@ fun TextKitFormattingDivider(
 }
 
 @Composable
-private fun TextKitFormattingSeparator(
+internal fun TextKitFormattingSeparator(
     modifier: Modifier = Modifier
 ) {
     Spacer(

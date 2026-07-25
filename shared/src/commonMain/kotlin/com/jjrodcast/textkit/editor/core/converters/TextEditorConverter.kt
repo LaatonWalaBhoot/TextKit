@@ -24,6 +24,7 @@ import com.jjrodcast.textkit.editor.core.parser.Paragraph
 import com.jjrodcast.textkit.editor.core.parser.ParagraphNone
 import com.jjrodcast.textkit.editor.core.parser.TaskList
 import com.jjrodcast.textkit.editor.core.parser.TaskListItem
+import com.jjrodcast.textkit.editor.core.parser.TextAlign
 import com.jjrodcast.textkit.editor.core.parser.Text
 import com.jjrodcast.textkit.editor.core.parser.TextEditorDocument
 import com.jjrodcast.textkit.editor.core.parser.TokenAttrs
@@ -142,6 +143,7 @@ internal object TextEditorConverter {
                         )
                     }
                 }
+                items.applyTextAlign(attrs.textAlign)
                 when (decorator) {
                     is TextDecoratorModel.BlockquoteDecorator -> items.postProcessBlockquotes()
                     else -> items.postProcessParagraph(decorator)
@@ -161,6 +163,7 @@ internal object TextEditorConverter {
                         )
                     }
                 }
+                items.applyTextAlign(attrs.textAlign)
                 items.postProcessParagraph(decorator)
             }
 
@@ -226,6 +229,19 @@ internal object TextEditorConverter {
             ParagraphNone -> emptyList<TextEditorModel>()
         }
         return items
+    }
+
+    /**
+     * Stamps the paragraph-level [textAlign] onto every piece produced for a paragraph/heading so it
+     * survives the piece-table round-trip (see [RichPiece.textAlign]). No-op for the default
+     * [TextAlign.Left] to avoid touching pieces of the (overwhelmingly common) left-aligned case.
+     */
+    private fun ArrayList<TextEditorModel>.applyTextAlign(textAlign: TextAlign) {
+        if (textAlign == TextAlign.Left) return
+        for (i in indices) {
+            val model = this[i]
+            this[i] = model.copy(piece = model.piece.copy(textAlign = textAlign))
+        }
     }
 
     private fun ArrayList<TextEditorModel>.postProcessParagraph(decorator: TextDecoratorModel?) {

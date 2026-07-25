@@ -31,6 +31,7 @@ import com.jjrodcast.textkit.editor.models.TextKitTrigger
 import com.jjrodcast.textkit.editor.models.createTextKitConfiguration
 import com.jjrodcast.textkit.editor.utils.DocumentUtils
 import com.jjrodcast.textkit.theme.TextKitTheme
+import com.jjrodcast.textkit.ui.TextKitAlignPopup
 import com.jjrodcast.textkit.ui.TextKitColorsPopup
 import com.jjrodcast.textkit.ui.TextKitEditor
 import com.jjrodcast.textkit.ui.TextKitEmbedPopup
@@ -147,6 +148,7 @@ fun TextKitSample() {
                 onTextAndColorClick = { state.openColorPicker(it) },
                 onOrderedListClick = state::toggleOrderedList,
                 onBulletedListClick = state::toggleUnorderedList,
+                onTextAlignClick = { state.openAlignPicker(it) },
                 onUndoClick = { state.undo() },
                 onRedoClick = { state.redo() },
                 canUndo = state.canUndo,
@@ -166,6 +168,7 @@ fun TextKitSample() {
                     state = state,
                     colors = barState.colors
                 )
+                TextKitAlignPopup(state = state)
                 TextKitLinkPopup(
                     state = state,
                     onEdit = { link ->
@@ -248,6 +251,7 @@ fun TextKitSampleNonMobile(
                 onTextAndColorClick = { state.openColorPicker(it) },
                 onOrderedListClick = state::toggleOrderedList,
                 onBulletedListClick = state::toggleUnorderedList,
+                onTextAlignClick = { state.openAlignPicker(it) },
                 onUndoClick = { state.undo() },
                 onRedoClick = { state.redo() },
                 canUndo = state.canUndo,
@@ -267,6 +271,7 @@ fun TextKitSampleNonMobile(
                     state = state,
                     colors = barState.colors
                 )
+                TextKitAlignPopup(state = state)
                 TextKitLinkPopup(
                     state = state,
                     onEdit = { link ->

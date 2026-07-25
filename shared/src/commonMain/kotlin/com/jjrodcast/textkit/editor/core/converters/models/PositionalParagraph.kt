@@ -27,8 +27,6 @@ internal data class PositionalParagraph(
     val textStyled: List<TextEditorModel> = emptyList(),
     val positionalParagraphs: ArrayList<PositionalParagraph> = arrayListOf()
 ) {
-    var isVisited: Boolean = false
-
     internal fun getParagraphContent(): List<BaseText> {
         return if (textStyled.any { it.text.isNotEmpty() }) {
             textStyled.mapNotNull {

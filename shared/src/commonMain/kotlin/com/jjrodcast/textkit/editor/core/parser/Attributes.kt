@@ -1,5 +1,6 @@
 package com.jjrodcast.textkit.editor.core.parser
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -12,7 +13,44 @@ data class TaskListAttrs(val checked: Boolean = false)
 data class ListAttrs(val start: Int = 1)
 
 @Serializable
-data class HeadingAttrs(val level: Int = HeadingLevels.H4)
+data class HeadingAttrs(
+    val level: Int = HeadingLevels.H4,
+    val textAlign: TextAlign = TextAlign.Left
+)
+
+/**
+ * Attributes for a plain [Paragraph]. Carries the ProseMirror/TipTap `textAlign` attr so paragraph
+ * alignment round-trips through the parser.
+ */
+@Serializable
+data class ParagraphAttrs(val textAlign: TextAlign = TextAlign.Left)
+
+/**
+ * Horizontal alignment for block nodes (`paragraph`, `heading`), serialized as the
+ * ProseMirror/TipTap `textAlign` attr string. Only the four values below are supported; any other
+ * value in a loaded document coerces to [Left] thanks to [TEXT_EDITOR_JSON]'s `coerceInputValues`.
+ */
+@Serializable
+enum class TextAlign {
+    @SerialName(TextAlignValues.Left)
+    Left,
+
+    @SerialName(TextAlignValues.Center)
+    Center,
+
+    @SerialName(TextAlignValues.Right)
+    Right,
+
+    @SerialName(TextAlignValues.Justify)
+    Justify
+}
+
+internal object TextAlignValues {
+    const val Left = "left"
+    const val Center = "center"
+    const val Right = "right"
+    const val Justify = "justify"
+}
 
 @Serializable
 data class TextStyleAttrs(val color: String? = "", val fontSize: Int = UNSET_FONT_SIZE) {

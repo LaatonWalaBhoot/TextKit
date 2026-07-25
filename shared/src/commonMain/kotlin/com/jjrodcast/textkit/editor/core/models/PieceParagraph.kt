@@ -1,5 +1,6 @@
 package com.jjrodcast.textkit.editor.core.models
 
+import com.jjrodcast.textkit.editor.core.parser.TextAlign
 import com.jjrodcast.textkit.editor.core.piecetable.models.RichPiece
 import com.jjrodcast.textkit.editor.core.piecetable.models.TextDecoratorModel.Companion.toTextEditorListItem
 import com.jjrodcast.textkit.editor.utils.intersect
@@ -51,6 +52,15 @@ internal data class PieceParagraph(
     val isListItem get() = startPiece.decorator != null
 
     val paragraphType get() = startPiece.decorator.toTextEditorListItem()
+
+    /**
+     * Paragraph-level alignment resolved from its pieces: the first non-default value wins (an edit
+     * can leave a freshly typed piece at [TextAlign.Left] while its neighbours keep the paragraph's
+     * value), falling back to [TextAlign.Left]. See [RichPiece.textAlign].
+     */
+    val textAlign: TextAlign
+        get() = pieces.firstOrNull { it.piece.textAlign != TextAlign.Left }?.piece?.textAlign
+            ?: TextAlign.Left
 
     fun findPiecesInRange(start: Int, end: Int): List<TextEditorModel> {
         return pieces

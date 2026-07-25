@@ -25,7 +25,11 @@ internal data class MultiPieceParagraph(
     val lastParagraph get() = paragraphs.last()
 
     val paragraphsInSelectedRange by lazy {
-        paragraphs.filter { intersect(start, end, it.start, it.end) }
+        paragraphs.filter {
+            val paragraphStart = it.startOffset
+            val paragraphEnd = it.endOffset + it.endPiece.length
+            end == paragraphEnd || intersect(start, end, paragraphStart, paragraphEnd)
+        }
     }
 
     val selectedParagraphIndices: List<Int> by lazy {
@@ -245,6 +249,9 @@ internal data class MultiPieceParagraph(
     internal fun getMarksWithType(configuration: TextKitConfiguration): MarkSearchType {
         val range = TextRange(start, end)
         val data = getAllModelsInRange()
+        // Alignment common to every paragraph the selection touches; null means a "mixed" selection
+        // (paragraphs with differing alignment) so a toolbar can show nothing as active.
+        val textAlign = paragraphsInSelectedRange.map { it.textAlign }.toSet().singleOrNull()
         return when {
             data.isEmpty() -> MarkSearchType()
             // When the size is 2 and the range is collapsed means that the cursor is in the middle of 2 pieces,
@@ -266,7 +273,8 @@ internal data class MultiPieceParagraph(
                         marks = piece.marks,
                         listItem = element.paragraphType,
                         range = newRange,
-                        text = element.text.removeLineBreakSuffix()
+                        text = element.text.removeLineBreakSuffix(),
+                        textAlign = textAlign
                     )
                 } else {
                     val textStart = start - element.offsetInDocument
@@ -275,7 +283,8 @@ internal data class MultiPieceParagraph(
                         marks = element.piece.marks,
                         listItem = element.paragraphType,
                         range = range,
-                        text = text
+                        text = text,
+                        textAlign = textAlign
                     )
                 }
             }
@@ -291,7 +300,7 @@ internal data class MultiPieceParagraph(
                     if (it is TextStyleMark && TextStyleMark.isDefault(it, configuration)) null
                     else it
                 }.toSet()
-                MarkSearchType(filteredMarks, listItemType, range, text)
+                MarkSearchType(filteredMarks, listItemType, range, text, textAlign)
             }
         }
     }
@@ -301,7 +310,8 @@ internal data class MultiPieceParagraph(
         // Decorator pieces (list bullets/numbers/checkboxes) and pure line-break pieces carry no
         // marks; counting them would dilute the intersection to empty for multi-paragraph or list
         // selections whose text actually shares the same marks.
-        val content = data.filter { !it.isDecorator && it.text.removeLineBreakSuffix().isNotEmpty() }
+        val content =
+            data.filter { !it.isDecorator && it.text.removeLineBreakSuffix().isNotEmpty() }
         if (content.isEmpty()) return emptySet()
 
         // Single pass over all marks: count total occurrences per key and keep the first

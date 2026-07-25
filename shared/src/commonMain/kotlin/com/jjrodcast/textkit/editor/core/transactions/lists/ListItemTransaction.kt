@@ -39,7 +39,7 @@ internal object ListItemTransaction {
         listItem: TextEditorDecoratorItem,
         range: TextRange
     ): Pair<Boolean, TextRange> {
-        val originalLines = transaction.getLineContentWithNeigborParagraphs(range.min, range.max)
+        val originalLines = transaction.getLineContentWithNeighborParagraphs(range.min, range.max)
 
         val lines = MultiPieceParagraph(paragraphs = originalLines.paragraphs, start = originalLines.start, end = originalLines.end)
         val selectedParagraphs = originalLines.paragraphsInSelectedRange.size
