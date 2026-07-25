@@ -55,7 +55,7 @@ class HtmlSerializerTest {
         HtmlSerializer().serialize(TextEditorDocument(blocks.toList()))
 
     private fun paragraphOf(text: String, marks: Set<Mark> = emptySet()) =
-        Paragraph(listOf(Text(text, marks)))
+        Paragraph(content = listOf(Text(text, marks)))
 
     // ── Blocks ───────────────────────────────────────────────────────────────
 
@@ -148,11 +148,11 @@ class HtmlSerializerTest {
 
         assertEquals(
             "<ul data-type=\"taskList\">" +
-                "<li data-type=\"taskItem\" data-checked=\"false\">" +
-                "<input type=\"checkbox\"><p>buy milk</p></li>" +
-                "<li data-type=\"taskItem\" data-checked=\"true\">" +
-                "<input type=\"checkbox\" checked><p>walk dog</p></li>" +
-                "</ul>",
+                    "<li data-type=\"taskItem\" data-checked=\"false\">" +
+                    "<input type=\"checkbox\"><p>buy milk</p></li>" +
+                    "<li data-type=\"taskItem\" data-checked=\"true\">" +
+                    "<input type=\"checkbox\" checked><p>walk dog</p></li>" +
+                    "</ul>",
             output,
         )
         // The checkbox must stay interactive — never rendered disabled.
@@ -171,7 +171,7 @@ class HtmlSerializerTest {
     fun exports_a_hard_break() {
         assertEquals(
             "<p>a<br>b</p>",
-            html(Paragraph(listOf(Text("a"), HardBreak(), Text("b")))),
+            html(Paragraph(content = listOf(Text("a"), HardBreak(), Text("b")))),
         )
     }
 
@@ -242,7 +242,12 @@ class HtmlSerializerTest {
     fun omits_a_text_style_mark_that_carries_neither_colour_nor_size() {
         assertEquals(
             "<p>plain</p>",
-            html(paragraphOf("plain", setOf(TextStyleMark(TextStyleAttrs(color = "", fontSize = 0))))),
+            html(
+                paragraphOf(
+                    "plain",
+                    setOf(TextStyleMark(TextStyleAttrs(color = "", fontSize = 0)))
+                )
+            ),
         )
     }
 
@@ -250,7 +255,12 @@ class HtmlSerializerTest {
     fun exports_only_the_half_of_a_text_style_mark_that_is_set() {
         assertEquals(
             "<p><span style=\"color:#00FF00\">green</span></p>",
-            html(paragraphOf("green", setOf(TextStyleMark(TextStyleAttrs(color = "#00FF00", fontSize = 0))))),
+            html(
+                paragraphOf(
+                    "green",
+                    setOf(TextStyleMark(TextStyleAttrs(color = "#00FF00", fontSize = 0)))
+                )
+            ),
         )
     }
 
@@ -260,13 +270,13 @@ class HtmlSerializerTest {
     fun exports_tokens_with_their_label_and_identity() {
         assertEquals(
             "<p>" +
-                "<span data-type=\"mention\" data-id=\"1\">@ada</span>" +
-                " " +
-                "<span data-type=\"hashtag\" data-id=\"2\">#kotlin</span>" +
-                "</p>",
+                    "<span data-type=\"mention\" data-id=\"1\">@ada</span>" +
+                    " " +
+                    "<span data-type=\"hashtag\" data-id=\"2\">#kotlin</span>" +
+                    "</p>",
             html(
                 Paragraph(
-                    listOf(
+                    content = listOf(
                         Mention(TokenAttrs(id = "1", label = "ada")),
                         Text(" "),
                         Hashtag(TokenAttrs(id = "2", label = "kotlin")),
@@ -282,7 +292,12 @@ class HtmlSerializerTest {
             "<p><strong><span data-type=\"mention\" data-id=\"7\">@ada</span></strong></p>",
             html(
                 Paragraph(
-                    listOf(Mention(TokenAttrs(id = "7", label = "ada"), marks = setOf(BoldMark()))),
+                    content = listOf(
+                        Mention(
+                            TokenAttrs(id = "7", label = "ada"),
+                            marks = setOf(BoldMark())
+                        )
+                    ),
                 ),
             ),
         )
@@ -292,7 +307,7 @@ class HtmlSerializerTest {
     fun escapes_a_token_label_and_id() {
         assertEquals(
             "<p><span data-type=\"mention\" data-id=\"a&quot;b\">@a&lt;b</span></p>",
-            html(Paragraph(listOf(Mention(TokenAttrs(id = "a\"b", label = "a<b"))))),
+            html(Paragraph(content = listOf(Mention(TokenAttrs(id = "a\"b", label = "a<b"))))),
         )
     }
 
@@ -317,9 +332,9 @@ class HtmlSerializerTest {
 
         assertEquals(
             "<table>" +
-                "<tr><th><p>Name</p></th></tr>" +
-                "<tr><td><p>Juan</p></td></tr>" +
-                "</table>",
+                    "<tr><th><p>Name</p></th></tr>" +
+                    "<tr><td><p>Juan</p></td></tr>" +
+                    "</table>",
             editorFrom(json).toHtml(),
         )
     }
@@ -341,9 +356,9 @@ class HtmlSerializerTest {
 
         assertEquals(
             "<table><tr>" +
-                "<td colspan=\"2\"><p>wide</p></td>" +
-                "<td><p>narrow</p></td>" +
-                "</tr></table>",
+                    "<td colspan=\"2\"><p>wide</p></td>" +
+                    "<td><p>narrow</p></td>" +
+                    "</tr></table>",
             editorFrom(json).toHtml(),
         )
     }
@@ -397,7 +412,12 @@ class HtmlSerializerTest {
     fun escapes_quotes_and_ampersands_in_a_link_href() {
         assertEquals(
             "<p><a href=\"https://test.com/?q=&quot;x&quot;&amp;y=1\">tricky</a></p>",
-            html(paragraphOf("tricky", setOf(LinkMark(LinkAttrs("https://test.com/?q=\"x\"&y=1"))))),
+            html(
+                paragraphOf(
+                    "tricky",
+                    setOf(LinkMark(LinkAttrs("https://test.com/?q=\"x\"&y=1")))
+                )
+            ),
         )
     }
 
@@ -441,16 +461,38 @@ class HtmlSerializerTest {
     fun emits_a_valid_hex_colour_but_drops_anything_else() {
         assertEquals(
             "<p><span style=\"color:#ABC\">x</span></p>",
-            html(paragraphOf("x", setOf(TextStyleMark(TextStyleAttrs(color = "#ABC", fontSize = 0))))),
+            html(
+                paragraphOf(
+                    "x",
+                    setOf(TextStyleMark(TextStyleAttrs(color = "#ABC", fontSize = 0)))
+                )
+            ),
         )
         // An injection attempt through the colour is not a valid hex value, so it is dropped entirely.
         assertEquals(
             "<p>x</p>",
-            html(paragraphOf("x", setOf(TextStyleMark(TextStyleAttrs(color = "#fff;background:url(x)", fontSize = 0))))),
+            html(
+                paragraphOf(
+                    "x",
+                    setOf(
+                        TextStyleMark(
+                            TextStyleAttrs(
+                                color = "#fff;background:url(x)",
+                                fontSize = 0
+                            )
+                        )
+                    )
+                )
+            ),
         )
         assertEquals(
             "<p>x</p>",
-            html(paragraphOf("x", setOf(TextStyleMark(TextStyleAttrs(color = "red", fontSize = 0))))),
+            html(
+                paragraphOf(
+                    "x",
+                    setOf(TextStyleMark(TextStyleAttrs(color = "red", fontSize = 0)))
+                )
+            ),
         )
     }
 
@@ -462,14 +504,21 @@ class HtmlSerializerTest {
         )
         assertEquals(
             "<p>x</p>",
-            html(paragraphOf("x", setOf(TextStyleMark(TextStyleAttrs(color = "", fontSize = 100_000))))),
+            html(
+                paragraphOf(
+                    "x",
+                    setOf(TextStyleMark(TextStyleAttrs(color = "", fontSize = 100_000)))
+                )
+            ),
         )
     }
 
     @Test
     fun clamps_a_non_positive_ordered_list_start() {
-        val zeroStart = OrderedList(ListAttrs(start = 0), listOf(ListItem(listOf(paragraphOf("a")))))
-        val negativeStart = OrderedList(ListAttrs(start = -3), listOf(ListItem(listOf(paragraphOf("a")))))
+        val zeroStart =
+            OrderedList(ListAttrs(start = 0), listOf(ListItem(listOf(paragraphOf("a")))))
+        val negativeStart =
+            OrderedList(ListAttrs(start = -3), listOf(ListItem(listOf(paragraphOf("a")))))
 
         // Clamped to 1, which is the default, so no start attribute is emitted (never `start="0"`).
         assertEquals("<ol><li><p>a</p></li></ol>", html(zeroStart))
