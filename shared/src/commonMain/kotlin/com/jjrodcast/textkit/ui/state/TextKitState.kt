@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -61,6 +62,7 @@ import com.jjrodcast.textkit.editor.core.piecetable.models.TextDecoratorModel
 import com.jjrodcast.textkit.editor.core.piecetable.models.TextDecoratorModel.Companion.createDecoratorString
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorAction
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorItem
+import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorParagraph
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorSelectedMark
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorTransactionType
 import com.jjrodcast.textkit.editor.core.transactions.text.TextTransaction
@@ -68,8 +70,16 @@ import com.jjrodcast.textkit.editor.models.MarkSearchType
 import com.jjrodcast.textkit.editor.models.TextKitConfiguration
 import com.jjrodcast.textkit.editor.models.TextKitTrigger
 import com.jjrodcast.textkit.editor.models.createTextKitConfiguration
+import com.jjrodcast.textkit.theme.TextKitTheme
 import com.jjrodcast.textkit.ui.model.TextKitCommand
 import com.jjrodcast.textkit.ui.model.TextKitLinkInfo
+import com.jjrodcast.textkit.ui.listlayout.ListItemEditorTransform
+import com.jjrodcast.textkit.ui.listlayout.EditorParagraphSegment
+import com.jjrodcast.textkit.ui.listlayout.ViewerBlock
+import com.jjrodcast.textkit.ui.listlayout.buildEditorSegments
+import com.jjrodcast.textkit.ui.listlayout.buildViewerBlocks
+import com.jjrodcast.textkit.ui.listlayout.buildViewerParagraphContent
+import com.jjrodcast.textkit.ui.listlayout.resolveParagraphOperationOffset
 import com.jjrodcast.textkit.ui.utils.createStyle
 import com.jjrodcast.textkit.ui.utils.restore
 import com.jjrodcast.textkit.ui.utils.save
@@ -98,7 +108,6 @@ fun rememberTextKitState(
  * and the configuration [TextKitConfiguration].
  *
  * @param json The JSON string representing the initial state of the RichText component.
- * @param isViewer Whether the component is in read-only viewer mode.
  * @param configuration The object that manages the configuration of colors and sizes. See [TextKitConfiguration].
  */
 @Stable
@@ -272,9 +281,22 @@ class TextKitState(
 
     private var annotatedString by mutableStateOf(AnnotatedString(text = ""))
 
+    private var editorSegments: List<EditorParagraphSegment> = emptyList()
+    private var editorOffsetMapping: OffsetMapping = OffsetMapping.Identity
+
+    private val viewerBlocksState = derivedStateOf {
+        annotatedString // snapshot dependency for highlight/theme rebuilds
+        buildViewerBlocks(
+            paragraphs = paragraphs,
+            buildParagraph = ::buildViewerParagraph,
+        )
+    }
+
+    internal val viewerBlocks: List<ViewerBlock> get() = viewerBlocksState.value
+
     private val viewerAnnotatedStringState = derivedStateOf {
-        annotatedString // establishes snapshot state dependency
-        createViewerAnnotatedString()
+        viewerBlocksState.value // legacy flat view for tests
+        flattenViewerBlocks(viewerBlocksState.value)
     }
 
     val viewerTextValue get() = viewerAnnotatedStringState.value
@@ -284,6 +306,15 @@ class TextKitState(
     private val isUsingClipboard get() = prevTextFieldValue.selection.collapsed && !textFieldValue.selection.collapsed
 
     internal val paragraphs get() = manager.getParagraphs()
+
+    internal fun editorSegments(): List<EditorParagraphSegment> = editorSegments
+
+    internal fun displayOffsetToFieldOffset(displayOffset: Int): Int {
+        val displayLength = annotatedString.length
+        val coerced = displayOffset.coerceIn(0, displayLength)
+        return editorOffsetMapping.transformedToOriginal(coerced)
+            .coerceIn(0, textFieldValue.text.length)
+    }
 
     /**
      * Whether the character under [position] (in the text field's local coordinates) sits on a
@@ -300,7 +331,9 @@ class TextKitState(
                 position.x > layout.getLineRight(line)
         if (outsideText) return false
 
-        val offset = layout.getOffsetForPosition(position).coerceIn(0, textFieldValue.text.length)
+        val displayOffset = layout.getOffsetForPosition(position)
+            .coerceIn(0, annotatedString.length)
+        val offset = displayOffsetToFieldOffset(displayOffset)
         val (href, _) = manager.getLink(offset, offset)
         return href != null
     }
@@ -519,11 +552,38 @@ class TextKitState(
      */
     fun applyTextAlignment(textAlign: TextKitTextAlign): Boolean =
         updateDocument(
-            selection,
+            paragraphOperationRange(),
             TextEditorSelectedMark.NONE,
             TextEditorSelectedMark.NONE,
             TextEditorTransactionType.Alignment(textAlign)
         )
+
+    /**
+     * Field range for paragraph-level formatting (alignment). Normalizes list-item carets that sit
+     * on the previous paragraph's line break or in the gutter so the item under the caret is updated.
+     */
+    private fun paragraphOperationRange(): TextRange {
+        val range = markTarget()
+        if (!range.collapsed) return range
+        val fieldOffset = range.min
+        val displayOffset = editorOffsetMapping.originalToTransformed(fieldOffset)
+        val resolved = resolveParagraphOperationOffset(
+            fieldOffset = fieldOffset,
+            displayOffset = displayOffset,
+            segments = editorSegments,
+            textLength = textFieldValue.text.length,
+            isAtEndOfParagraph = { offset ->
+                manager.transaction.getLineContent(offset, offset)
+                    .findParagraphBy(offset)
+                    ?.isAtEndOfParagraph(offset, offset) == true
+            },
+            paragraphStart = { offset ->
+                manager.transaction.getLineContent(offset, offset)
+                    .findParagraphBy(offset)?.startOffset ?: 0
+            },
+        )
+        return TextRange(resolved)
+    }
 
     /**
      * Toggles an ordered (numbered) list over the paragraph(s) the current selection touches,
@@ -887,7 +947,9 @@ class TextKitState(
     fun openEmbedAt(position: Offset): Boolean {
         if (!configuration.embedsEnabled) return false
         val layout = textLayoutResult ?: return false
-        val offset = layout.getOffsetForPosition(position).coerceIn(0, textFieldValue.text.length)
+        val displayOffset = layout.getOffsetForPosition(position)
+            .coerceIn(0, annotatedString.length)
+        val offset = displayOffsetToFieldOffset(displayOffset)
         val info = manager.embedAt(offset) ?: return false
         activeEmbed = info
         embedPopupOffset = Offset.Zero
@@ -1170,7 +1232,23 @@ class TextKitState(
     // endregion
 
     private fun updateAnnotatedString(selection: TextRange) {
-        annotatedString = defaultAnnotatedStringFormatting().withLinkHighlight()
+        val fieldLength = manager.text.length
+        editorSegments = buildEditorSegments(paragraphs, fieldLength, ::displayTextOf)
+
+        annotatedString = ListItemEditorTransform.buildDisplayAnnotatedString(
+            paragraphs = paragraphs,
+            fieldLength = fieldLength,
+            defaultStyle = DefaultParagraphStyle,
+            toComposeAlign = { it.toComposeTextAlign() },
+            displayTextOf = ::displayTextOf,
+            spanStyleOf = { child -> child.createStyle(manager.configuration, highlightColor) },
+        ).withLinkHighlight()
+
+        editorOffsetMapping = ListItemEditorTransform.offsetMapping(
+            segments = editorSegments,
+            totalDisplayLength = annotatedString.length,
+        )
+
         val text = manager.text
         val coerced = TextRange(
             start = selection.start.coerceIn(0, text.length),
@@ -1178,7 +1256,7 @@ class TextKitState(
         )
         textFieldValue = TextFieldValue(text = text, selection = coerced)
         visualTransformation =
-            VisualTransformation { _ -> TransformedText(annotatedString, OffsetMapping.Identity) }
+            VisualTransformation { _ -> TransformedText(annotatedString, editorOffsetMapping) }
     }
 
     /**
@@ -1199,25 +1277,6 @@ class TextKitState(
         }
     }
 
-    private fun defaultAnnotatedStringFormatting(): AnnotatedString {
-        val fieldLength = manager.text.length
-        return buildAnnotatedString {
-            // One ParagraphStyle per paragraph so each can carry its own horizontal alignment —
-            // `textAlign` is a ParagraphStyle-only property in Compose, so per-paragraph alignment is
-            // impossible with a single document-wide block. See [displayTextOf] for how the separating
-            // '\n' is rendered so there is no gap line and the caret behaves correctly.
-            paragraphs.forEach { paragraph ->
-                withStyle(DefaultParagraphStyle.copy(textAlign = paragraph.textAlign.toComposeTextAlign())) {
-                    paragraph.children.forEach { child ->
-                        withStyle(child.createStyle(manager.configuration, highlightColor)) {
-                            append(displayTextOf(child, fieldLength))
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     /** Maps the engine's paragraph [TextKitTextAlign] to Compose's [TextAlign] for a [ParagraphStyle]. */
     private fun TextKitTextAlign.toComposeTextAlign(): TextAlign = when (this) {
         TextKitTextAlign.Left -> TextAlign.Left
@@ -1226,75 +1285,107 @@ class TextKitState(
         TextKitTextAlign.Justify -> TextAlign.Justify
     }
 
-    private fun createViewerAnnotatedString(): Pair<AnnotatedString, Map<String, InlineTextContent>> {
+    private fun buildViewerParagraph(
+        paragraph: TextEditorParagraph,
+        includeDecorator: Boolean,
+    ): Pair<AnnotatedString, Map<String, InlineTextContent>> {
         val inlineContent = mutableMapOf<String, InlineTextContent>()
         val fieldLength = manager.text.length
-        val annotatedString = buildAnnotatedString {
-            // Same per-paragraph pattern as edit mode: one aligned ParagraphStyle per paragraph, with
-            // the separating '\n' rendered per [displayTextOf] (no gap line). The viewer is read-only
-            // (no TextField / OffsetMapping), so styles are applied to the appended run via
-            // withStyle/withLink instead of by field offsets.
-            paragraphs.forEach { paragraph ->
-                withStyle(DefaultParagraphStyle.copy(textAlign = paragraph.textAlign.toComposeTextAlign())) {
-                    paragraph.children.forEach { child ->
-                        val id = "${child.start}-${child.end}"
-                        if (child.decorator is TextDecoratorModel.TaskDecoratorModel) {
-                            val taskDecorator = child.decorator
-                            appendInlineContent(id, taskDecorator.createDecoratorString())
-                            inlineContent[id] = InlineTextContent(
-                                Placeholder(
-                                    width = (1.8).em,
-                                    height = (1.9).em,
-                                    placeholderVerticalAlign = PlaceholderVerticalAlign.Center
-                                )
-                            ) {
-                                CompositionLocalProvider(LocalRippleConfiguration provides null) {
-                                    Checkbox(
-                                        checked = taskDecorator.checked,
-                                        onCheckedChange = {},
-                                        modifier = Modifier.padding(start = 8.dp, end = 16.dp)
-                                    )
-                                }
-                            }
-                        } else {
-                            val content = displayTextOf(child, fieldLength)
-                            pushStringAnnotation(id, content)
-                            if (child.marks.any { it is LinkMark }) {
-                                withLink(
-                                    link = LinkAnnotation.Url(
-                                        url = child.marks.filterIsInstance<LinkMark>()
-                                            .first().attrs.href,
-                                        styles = TextLinkStyles(
-                                            child.createStyle(
-                                                manager.configuration,
-                                                highlightColor
-                                            )
-                                        ),
-                                        linkInteractionListener = {
-                                            val url = (it as LinkAnnotation.Url).url
-                                            onUrlClicked?.invoke(
-                                                url,
-                                                child.text,
-                                                TextRange(child.start, child.end)
-                                            )
-                                        }
-                                    )
-                                ) {
-                                    append(content)
-                                }
-                            } else {
-                                withStyle(child.createStyle(manager.configuration, highlightColor)) {
-                                    append(content)
-                                }
-                            }
-                            pop()
-                        }
+        val text = buildViewerParagraphContent(
+            paragraph = paragraph,
+            defaultStyle = DefaultParagraphStyle,
+            toComposeAlign = { it.toComposeTextAlign() },
+            includeDecorator = includeDecorator,
+        ) { child ->
+            appendViewerChild(child, fieldLength, inlineContent)
+        }
+        return text to inlineContent
+    }
+
+    private fun AnnotatedString.Builder.appendViewerChild(
+        child: TextEditorItem,
+        fieldLength: Int,
+        inlineContent: MutableMap<String, InlineTextContent>,
+    ) {
+        val id = "${child.start}-${child.end}"
+        if (child.decorator is TextDecoratorModel.TaskDecoratorModel) {
+            val taskDecorator = child.decorator
+            appendInlineContent(id, taskDecorator.createDecoratorString())
+            inlineContent[id] = InlineTextContent(
+                Placeholder(
+                    width = (1.8).em,
+                    height = (1.9).em,
+                    placeholderVerticalAlign = PlaceholderVerticalAlign.Center
+                )
+            ) {
+                CompositionLocalProvider(LocalRippleConfiguration provides null) {
+                    Checkbox(
+                        checked = taskDecorator.checked,
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = TextKitTheme.colors.primary,
+                            uncheckedColor = TextKitTheme.colors.outline,
+                            checkmarkColor = TextKitTheme.colors.onPrimary,
+                            disabledCheckedColor = TextKitTheme.colors.onSurface.copy(alpha = 0.38f),
+                            disabledUncheckedColor = TextKitTheme.colors.onSurface.copy(alpha = 0.38f),
+                            disabledIndeterminateColor = TextKitTheme.colors.onSurface.copy(alpha = 0.38f),
+                        ),
+                        onCheckedChange = {},
+                        modifier = Modifier.padding(start = 8.dp, end = 16.dp)
+                    )
+                }
+            }
+            return
+        }
+
+        val content = displayTextOf(child, fieldLength)
+        pushStringAnnotation(id, content)
+        if (child.marks.any { it is LinkMark }) {
+            withLink(
+                link = LinkAnnotation.Url(
+                    url = child.marks.filterIsInstance<LinkMark>().first().attrs.href,
+                    styles = TextLinkStyles(
+                        child.createStyle(manager.configuration, highlightColor)
+                    ),
+                    linkInteractionListener = {
+                        val url = (it as LinkAnnotation.Url).url
+                        onUrlClicked?.invoke(
+                            url,
+                            child.text,
+                            TextRange(child.start, child.end)
+                        )
+                    }
+                )
+            ) {
+                append(content)
+            }
+        } else {
+            withStyle(child.createStyle(manager.configuration, highlightColor)) {
+                append(content)
+            }
+        }
+        pop()
+    }
+
+    private fun flattenViewerBlocks(
+        blocks: List<ViewerBlock>,
+    ): Pair<AnnotatedString, Map<String, InlineTextContent>> {
+        val mergedInline = mutableMapOf<String, InlineTextContent>()
+        val text = buildAnnotatedString {
+            blocks.forEach { block ->
+                when (block) {
+                    is ViewerBlock.ListItem -> {
+                        append(block.content)
+                        mergedInline.putAll(block.inlineContent)
+                    }
+
+                    is ViewerBlock.Paragraph -> {
+                        append(block.text)
+                        mergedInline.putAll(block.inlineContent)
                     }
                 }
             }
         }
-
-        return Pair(annotatedString, inlineContent)
+        return text to mergedInline
     }
 
     private fun createAddAction(marks: Set<Mark> = emptySet()): TextEditorAction {
@@ -1442,7 +1533,8 @@ class TextKitState(
     private fun displayTextOf(child: TextEditorItem, fieldLength: Int): String {
         val endsDocument = child.end == fieldLength && child.text.endsWith(LINE_BREAK_CHAR)
         return if (endsDocument) {
-            child.text.dropLast(1).replace(LINE_BREAK_CHAR, PARAGRAPH_SEPARATOR_CHAR) + LINE_BREAK_CHAR
+            child.text.dropLast(1)
+                .replace(LINE_BREAK_CHAR, PARAGRAPH_SEPARATOR_CHAR) + LINE_BREAK_CHAR
         } else {
             child.text.replace(LINE_BREAK_CHAR, PARAGRAPH_SEPARATOR_CHAR)
         }

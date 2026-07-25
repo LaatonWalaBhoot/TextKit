@@ -1,0 +1,322 @@
+package com.jjrodcast.textkit
+
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.style.TextAlign as ComposeTextAlign
+import com.jjrodcast.textkit.editor.core.parser.TextAlign
+import com.jjrodcast.textkit.editor.models.createTextKitConfiguration
+import com.jjrodcast.textkit.ui.listlayout.ViewerBlock
+import com.jjrodcast.textkit.ui.listlayout.editorSegmentsNeedOffsetMapping
+import com.jjrodcast.textkit.ui.listlayout.normalizeTrailingParagraphBreakCaret
+import com.jjrodcast.textkit.ui.listlayout.resolveParagraphCaretFieldOffset
+import com.jjrodcast.textkit.ui.listlayout.resolveParagraphOperationOffset
+import com.jjrodcast.textkit.ui.listlayout.usesSplitListLayout
+import com.jjrodcast.textkit.ui.listlayout.viewerIndentLabel
+import com.jjrodcast.textkit.ui.listlayout.viewerMarkerLabel
+import com.jjrodcast.textkit.ui.state.TextKitState
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class ListItemUiTest {
+
+    private fun stateWith(json: String): TextKitState =
+        TextKitState(json, createTextKitConfiguration()).apply { setup() }
+
+    private fun centeredBulletListDoc() = """
+        {"type":"doc","content":[
+          {"type":"bulletList","content":[
+            {"type":"listItem","content":[
+              {"type":"paragraph","attrs":{"textAlign":"center"},"content":[
+                {"type":"text","text":"centered item"}
+              ]}
+            ]}
+          ]}
+        ]}
+    """
+
+    @Test
+    fun splitLayoutDetectedForAlignedListItem() {
+        val state = stateWith(centeredBulletListDoc())
+        assertTrue(state.paragraphs.first().usesSplitListLayout())
+        assertTrue(editorSegmentsNeedOffsetMapping(state.editorSegments()))
+    }
+
+    @Test
+    fun leftAlignedListUsesSplitLayout() {
+        val state = stateWith(SampleDocuments.ORDERED_LIST)
+        assertTrue(state.paragraphs.first().usesSplitListLayout())
+        assertTrue(editorSegmentsNeedOffsetMapping(state.editorSegments()))
+    }
+
+    @Test
+    fun viewerListItemBlockOmitsDecoratorFromContent() {
+        val state = stateWith(centeredBulletListDoc())
+        val block = state.viewerBlocks.single() as ViewerBlock.ListItem
+        assertFalse(block.content.text.contains('•'))
+        assertTrue(block.content.text.contains("centered item"))
+        assertEquals(TextAlign.Center, block.textAlign)
+    }
+
+    @Test
+    fun editorDisplayOmitsDecoratorForAlignedList() {
+        val state = stateWith(centeredBulletListDoc())
+        val fieldText = state.textFieldValue.text
+        val transformed = state.visualTransformation.filter(AnnotatedString(fieldText))
+        assertTrue(transformed.text.length < fieldText.length)
+        assertFalse(transformed.text.text.contains('•'))
+    }
+
+    @Test
+    fun editorOffsetMappingAtContentStart() {
+        val state = stateWith(centeredBulletListDoc())
+        val fieldText = state.textFieldValue.text
+        val transformed = state.visualTransformation.filter(AnnotatedString(fieldText))
+        val contentStart = fieldText.indexOf('c')
+        assertEquals(0, transformed.offsetMapping.originalToTransformed(contentStart))
+        assertEquals(contentStart, transformed.offsetMapping.transformedToOriginal(0))
+    }
+
+    @Test
+    fun viewerListItemContentIsCenterAligned() {
+        val state = stateWith(centeredBulletListDoc())
+        val block = state.viewerBlocks.single() as ViewerBlock.ListItem
+        assertEquals(TextAlign.Center, block.textAlign)
+        // Alignment is applied on the content BasicText; ParagraphStyle stays left in split layout.
+        val aligns = block.content.paragraphStyles.map { it.item.textAlign }
+        assertTrue(aligns.all { it == ComposeTextAlign.Left })
+    }
+
+    @Test
+    fun viewerGutterSplitsIndentFromMarker() {
+        val state = stateWith(SampleDocuments.ORDERED_LIST)
+        val block = state.viewerBlocks.first() as ViewerBlock.ListItem
+        assertTrue(block.gutter.viewerIndentLabel().contains('\t'))
+        assertFalse(block.gutter.viewerMarkerLabel().contains('\t'))
+        assertTrue(block.gutter.viewerMarkerLabel().contains('1'))
+    }
+
+    @Test
+    fun viewerOrderedListUsesSharedMarkerColumnWidth() {
+        val doc = """
+            {"type":"doc","content":[
+              {"type":"orderedList","attrs":{"start":1},"content":[
+                {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"one"}]}]},
+                {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"ten"}]}]}
+              ]}
+            ]}
+        """
+        val state = stateWith(doc)
+        val gutters = state.viewerBlocks.filterIsInstance<ViewerBlock.ListItem>().map { it.gutter }
+        assertEquals("1. ", gutters[0].viewerMarkerLabel())
+        assertEquals("2. ", gutters[1].viewerMarkerLabel())
+    }
+
+    @Test
+    fun applyAlignAtSecondListItemContentStartTargetsThatItem() {
+        val doc = """
+            {"type":"doc","content":[
+              {"type":"paragraph","content":[{"type":"text","text":"Before"}]},
+              {"type":"orderedList","attrs":{"start":1},"content":[
+                {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"one"}]}]},
+                {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"two"}]}]}
+              ]}
+            ]}
+        """
+        val state = stateWith(doc)
+        val text = state.textFieldValue.text
+        val twoIndex = text.indexOf("two")
+        val listItemTwoStart = text.indexOf('\t', text.indexOf("two") - 1).let { tab ->
+            // field start of second list item (decorator)
+            text.lastIndexOf('\n', twoIndex) + 1
+        }
+        val contentStart = twoIndex
+
+        // Caret at content start (correct field offset)
+        state.onTextFieldChange(state.textFieldValue.copy(selection = TextRange(contentStart)))
+        state.applyTextAlignment(TextAlign.Center)
+        assertEquals(TextAlign.Left, state.paragraphs[0].textAlign, "plain paragraph unchanged")
+        assertEquals(TextAlign.Left, state.paragraphs[1].textAlign, "first list item unchanged")
+        assertEquals(TextAlign.Center, state.paragraphs[2].textAlign, "second list item centered")
+
+        // Caret on `\n` at end of first list item (display still on item 1's line) → item 1.
+        val state2 = stateWith(doc)
+        val beforeSecondItem = listItemTwoStart - 1
+        assertEquals('\n', text[beforeSecondItem])
+        val mapping = state.visualTransformation.filter(AnnotatedString(text)).offsetMapping
+        val itemTwoSegment = state2.editorSegments().last { it.gutter != null }
+        assertTrue(mapping.originalToTransformed(beforeSecondItem) < itemTwoSegment.displayStart)
+        state2.onTextFieldChange(state2.textFieldValue.copy(selection = TextRange(beforeSecondItem)))
+        state2.applyTextAlignment(TextAlign.Right)
+        assertEquals(TextAlign.Left, state2.paragraphs[0].textAlign)
+        assertEquals(TextAlign.Right, state2.paragraphs[1].textAlign)
+        assertEquals(TextAlign.Left, state2.paragraphs[2].textAlign)
+
+        // Same field `\n`, but display caret already on item 2's line → item 2.
+        val resolvedStart = resolveParagraphOperationOffset(
+            fieldOffset = beforeSecondItem,
+            displayOffset = itemTwoSegment.displayStart,
+            segments = state2.editorSegments(),
+            textLength = text.length,
+            isAtEndOfParagraph = { false },
+            paragraphStart = { 0 },
+        )
+        assertEquals(twoIndex, resolvedStart)
+    }
+
+    @Test
+    fun applyAlignAtFirstListItemAfterPlainTargetsListItem() {
+        val doc = """
+            {"type":"doc","content":[
+              {"type":"paragraph","content":[{"type":"text","text":"Before"}]},
+              {"type":"bulletList","content":[
+                {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"item"}]}]}
+              ]}
+            ]}
+        """
+        val state = stateWith(doc)
+        val text = state.textFieldValue.text
+        val itemIndex = text.indexOf("item")
+        state.onTextFieldChange(state.textFieldValue.copy(selection = TextRange(itemIndex)))
+        state.applyTextAlignment(TextAlign.Center)
+        assertEquals(TextAlign.Left, state.paragraphs[0].textAlign)
+        assertEquals(TextAlign.Center, state.paragraphs[1].textAlign)
+    }
+
+    @Test
+    fun applyAlignAtListItemEndTargetsThatItemNotNext() {
+        val state = stateWith(SampleDocuments.ORDERED_LIST)
+        val text = state.textFieldValue.text
+        val firstItemBreak = text.indexOf('\n')
+        assertTrue(firstItemBreak > 0)
+
+        state.onTextFieldChange(state.textFieldValue.copy(selection = TextRange(firstItemBreak)))
+        state.applyTextAlignment(TextAlign.Center)
+
+        assertEquals(TextAlign.Center, state.paragraphs[0].textAlign)
+        if (state.paragraphs.size > 1) {
+            assertEquals(TextAlign.Left, state.paragraphs[1].textAlign)
+        }
+    }
+
+    @Test
+    fun applyAlignAtPlainParagraphEndTargetsThatParagraph() {
+        val state = stateWith(SampleDocuments.TWO_PARAGRAPHS)
+        val text = state.textFieldValue.text
+        val firstParagraphEnd = text.indexOf('\n')
+        assertTrue(firstParagraphEnd > 0)
+
+        state.onTextFieldChange(state.textFieldValue.copy(selection = TextRange(firstParagraphEnd)))
+        state.applyTextAlignment(TextAlign.Center)
+
+        assertEquals(TextAlign.Center, state.paragraphs[0].textAlign)
+        assertEquals(TextAlign.Left, state.paragraphs[1].textAlign)
+    }
+
+    @Test
+    fun applyAlignAtPlainParagraphBeforeListTargetsPlainParagraph() {
+        val doc = """
+            {"type":"doc","content":[
+              {"type":"paragraph","content":[{"type":"text","text":"Before"}]},
+              {"type":"bulletList","content":[
+                {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"item"}]}]}
+              ]}
+            ]}
+        """
+        val state = stateWith(doc)
+        val text = state.textFieldValue.text
+        val beforeListBreak = text.indexOf('\n')
+        assertEquals("Before", text.substring(0, beforeListBreak))
+
+        state.onTextFieldChange(state.textFieldValue.copy(selection = TextRange(beforeListBreak)))
+        state.applyTextAlignment(TextAlign.Right)
+
+        assertEquals(TextAlign.Right, state.paragraphs[0].textAlign)
+        assertEquals(TextAlign.Left, state.paragraphs[1].textAlign)
+    }
+
+    @Test
+    fun alignChangeKeepsSplitLayoutStable() {
+        val state = stateWith(SampleDocuments.ORDERED_LIST)
+        assertTrue(state.paragraphs.first().usesSplitListLayout())
+        state.applyTextAlignment(TextAlign.Center)
+        assertTrue(state.paragraphs.first().usesSplitListLayout())
+        state.applyTextAlignment(TextAlign.Right)
+        assertTrue(state.paragraphs.first().usesSplitListLayout())
+    }
+
+    @Test
+    fun normalizeTrailingBreakCaretMovesIntoParagraphContent() {
+        assertEquals(4, normalizeTrailingParagraphBreakCaret(
+            offset = 5,
+            isEndOfParagraph = true,
+            paragraphStart = 0,
+        ))
+        assertEquals(5, normalizeTrailingParagraphBreakCaret(
+            offset = 5,
+            isEndOfParagraph = false,
+            paragraphStart = 0,
+        ))
+    }
+
+    @Test
+    fun resolveCaretOnLineBreakBeforePlainParagraphStaysOnBreak() {
+        val state = stateWith("""
+            {"type":"doc","content":[
+              {"type":"paragraph","content":[{"type":"text","text":"A"}]},
+              {"type":"bulletList","content":[
+                {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"B"}]}]}
+              ]}
+            ]}
+        """)
+        val segs = state.editorSegments()
+        val listSegment = segs.first { it.gutter != null }
+        val resolved = resolveParagraphCaretFieldOffset(
+            rawOffset = listSegment.fieldStart - 1,
+            segments = segs,
+            textLength = state.textFieldValue.text.length,
+        )
+        assertEquals(listSegment.fieldStart - 1, resolved)
+    }
+
+    @Test
+    fun resolveBoundaryNewlineUsesDisplayToPickListItem() {
+        val doc = """
+            {"type":"doc","content":[
+              {"type":"orderedList","attrs":{"start":1},"content":[
+                {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"one"}]}]},
+                {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"two"}]}]}
+              ]}
+            ]}
+        """
+        val state = stateWith(doc)
+        val segs = state.editorSegments()
+        val second = segs.last { it.gutter != null }
+        val boundary = second.fieldStart - 1
+
+        val endOfFirst = resolveParagraphCaretFieldOffset(
+            rawOffset = boundary,
+            segments = segs,
+            textLength = state.textFieldValue.text.length,
+            displayOffset = second.displayStart - 1,
+        )
+        assertEquals(boundary, endOfFirst)
+
+        val startOfSecond = resolveParagraphCaretFieldOffset(
+            rawOffset = boundary,
+            segments = segs,
+            textLength = state.textFieldValue.text.length,
+            displayOffset = second.displayStart,
+        )
+        assertEquals(second.fieldStart + second.gutterLength, startOfSecond)
+    }
+
+    @Test
+    fun plainParagraphKeepsIdentityMapping() {
+        val state = stateWith(SampleDocuments.SINGLE_PARAGRAPH)
+        val fieldText = state.textFieldValue.text
+        val transformed = state.visualTransformation.filter(AnnotatedString(fieldText))
+        assertEquals(fieldText.length, transformed.text.length)
+    }
+}

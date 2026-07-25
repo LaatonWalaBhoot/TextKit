@@ -1,8 +1,9 @@
 package com.jjrodcast.textkit.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import com.jjrodcast.textkit.editor.models.createTextKitConfiguration
 import com.jjrodcast.textkit.theme.TextKitTheme
+import com.jjrodcast.textkit.ui.listlayout.ListItemEditorGutterOverlay
 import com.jjrodcast.textkit.ui.state.TextKitState
 import com.jjrodcast.textkit.ui.state.rememberTextKitState
 import org.jetbrains.compose.resources.stringResource
@@ -110,6 +112,13 @@ fun TextKitEditor(
                     )
                 }
                 innerTextField()
+                ListItemEditorGutterOverlay(
+                    layoutResult = state.textLayoutResult,
+                    segments = state.editorSegments(),
+                    textStyle = TextStyle(color = TextKitTheme.colors.onSurface),
+                    textColor = TextKitTheme.colors.onSurface,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
         }
     )
@@ -187,29 +196,38 @@ fun TextKitEditorOutlined(
         textStyle = TextStyle(color = TextKitTheme.colors.onSurface),
         cursorBrush = SolidColor(TextKitTheme.colors.primary),
         decorationBox = { innerTextField ->
-            OutlinedTextFieldDefaults.DecorationBox(
-                value = state.textFieldValue.text,
-                innerTextField = innerTextField,
-                enabled = enabled,
-                singleLine = singleLine,
-                visualTransformation = state.visualTransformation,
-                interactionSource = interactionSource,
-                placeholder = {
-                    if (state.textFieldValue.text.isEmpty()) {
-                        Text(
-                            text = stringResource(Res.string.type_text),
-                            color = TextKitTheme.colors.onSurfaceVariant
+            Box {
+                OutlinedTextFieldDefaults.DecorationBox(
+                    value = state.textFieldValue.text,
+                    innerTextField = innerTextField,
+                    enabled = enabled,
+                    singleLine = singleLine,
+                    visualTransformation = state.visualTransformation,
+                    interactionSource = interactionSource,
+                    placeholder = {
+                        if (state.textFieldValue.text.isEmpty()) {
+                            Text(
+                                text = stringResource(Res.string.type_text),
+                                color = TextKitTheme.colors.onSurfaceVariant
+                            )
+                        }
+                    },
+                    container = {
+                        OutlinedTextFieldDefaults.Container(
+                            enabled = enabled,
+                            isError = false,
+                            interactionSource = interactionSource,
                         )
                     }
-                },
-                container = {
-                    OutlinedTextFieldDefaults.Container(
-                        enabled = enabled,
-                        isError = false,
-                        interactionSource = interactionSource,
-                    )
-                }
-            )
+                )
+                ListItemEditorGutterOverlay(
+                    layoutResult = state.textLayoutResult,
+                    segments = state.editorSegments(),
+                    textStyle = TextStyle(color = TextKitTheme.colors.onSurface),
+                    textColor = TextKitTheme.colors.onSurface,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     )
 }
