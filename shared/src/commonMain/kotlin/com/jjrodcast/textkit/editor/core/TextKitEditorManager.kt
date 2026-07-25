@@ -9,6 +9,7 @@ import com.jjrodcast.textkit.editor.core.parser.EmbedTokenType
 import com.jjrodcast.textkit.editor.core.parser.Mark
 import com.jjrodcast.textkit.editor.core.parser.MentionType
 import com.jjrodcast.textkit.editor.core.parser.TEXT_EDITOR_JSON
+import com.jjrodcast.textkit.editor.core.parser.TextAlign
 import com.jjrodcast.textkit.editor.core.parser.TextStyleAttrs
 import com.jjrodcast.textkit.editor.core.parser.TextStyleMark
 import com.jjrodcast.textkit.editor.core.parser.TokenAttrs
@@ -120,6 +121,10 @@ class TextKitEditorManager(val configuration: TextKitConfiguration = createTextK
         transactionType: TextEditorTransactionType = TextEditorTransactionType.Format
     ): Pair<Boolean, TextRange> = when (transactionType) {
         is TextEditorTransactionType.Color -> updateColor(selection, transactionType.color)
+        is TextEditorTransactionType.Alignment -> {
+            updateTextAlignment(selection, transactionType.textAlign)
+        }
+
         else -> transaction.updateDocument(
             prevMarks = prevSelectedMark.marks,
             currMarks = currSelectedMark.marks,
@@ -129,6 +134,27 @@ class TextKitEditorManager(val configuration: TextKitConfiguration = createTextK
             transactionType = transactionType
         )
     }
+
+    /**
+     * Sets the paragraph horizontal [textAlign] over every paragraph the [selection] touches.
+     * Delegates straight to the transaction (which retags whole paragraphs), so it applies to whole
+     * paragraphs — a mark change would only affect the selected characters — and works with a
+     * collapsed caret. Called from [updateDocument]'s [TextEditorTransactionType.Alignment] branch;
+     * marks are irrelevant for alignment.
+     *
+     * @return whether the document changed, plus the resulting selection (unchanged by an alignment).
+     */
+    private fun updateTextAlignment(
+        selection: TextRange,
+        textAlign: TextAlign
+    ): Pair<Boolean, TextRange> = transaction.updateDocument(
+        prevMarks = emptySet(),
+        currMarks = emptySet(),
+        prevListItem = TextEditorSelectedMark.NONE.listItemSelected,
+        currListItem = TextEditorSelectedMark.NONE.listItemSelected,
+        range = selection,
+        transactionType = TextEditorTransactionType.Alignment(textAlign)
+    )
 
     private fun updateColor(
         selection: TextRange,
@@ -197,11 +223,19 @@ class TextKitEditorManager(val configuration: TextKitConfiguration = createTextK
         val model = TextEditorModel.create(
             text = text,
             marks = marks,
-            token = nodeType?.let { RichToken(type = it, attrs = TokenAttrs(id = id, label = label)) }
+            token = nodeType?.let {
+                RichToken(
+                    type = it,
+                    attrs = TokenAttrs(id = id, label = label)
+                )
+            }
         )
         val start = replaceRange.min
         val length = replaceRange.length
-        if (length > 0) transaction.update(start, length, model) else transaction.insert(model, start)
+        if (length > 0) transaction.update(start, length, model) else transaction.insert(
+            model,
+            start
+        )
         return TextRange(start + text.length)
     }
 
@@ -260,7 +294,8 @@ class TextKitEditorManager(val configuration: TextKitConfiguration = createTextK
         // Terminate the embed's own paragraph with a line break, unless the right side already starts
         // one (avoids an extra empty line) or we're at the end of the document.
         val rightChar = fullText.getOrNull(start)
-        val placeholderText = if (rightChar != null && rightChar != '\n') label + LINE_BREAK else label
+        val placeholderText =
+            if (rightChar != null && rightChar != '\n') label + LINE_BREAK else label
         val model = TextEditorModel.create(
             text = placeholderText,
             token = RichToken(

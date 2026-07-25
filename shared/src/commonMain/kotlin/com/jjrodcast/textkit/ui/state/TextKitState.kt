@@ -53,12 +53,14 @@ import com.jjrodcast.textkit.editor.core.parser.LinkAttrs
 import com.jjrodcast.textkit.editor.core.parser.LinkMark
 import com.jjrodcast.textkit.editor.core.parser.Mark
 import com.jjrodcast.textkit.editor.core.parser.StrikeMark
+import com.jjrodcast.textkit.editor.core.parser.TextAlign as TextKitTextAlign
 import com.jjrodcast.textkit.editor.core.parser.TextStyleAttrs
 import com.jjrodcast.textkit.editor.core.parser.TextStyleMark
 import com.jjrodcast.textkit.editor.core.parser.UnderlineMark
 import com.jjrodcast.textkit.editor.core.piecetable.models.TextDecoratorModel
 import com.jjrodcast.textkit.editor.core.piecetable.models.TextDecoratorModel.Companion.createDecoratorString
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorAction
+import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorItem
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorSelectedMark
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorTransactionType
 import com.jjrodcast.textkit.editor.core.transactions.text.TextTransaction
@@ -169,6 +171,14 @@ class TextKitState(
             ?.let { runCatching { Color(it.toColorInt()) }.getOrNull() }
 
     /**
+     * Horizontal alignment of the paragraph(s) at the caret/selection, captured alongside [lastMarks]
+     * when the selection moves. `null` means a "mixed" selection (paragraphs with differing
+     * alignment). Observe it to mark the active alignment button in the formatting bar.
+     */
+    var currentTextAlign by mutableStateOf<TextKitTextAlign?>(TextKitTextAlign.Left)
+        private set
+
+    /**
      * Window-coordinate bounds the colors popup is anchored to while open, or null when it is closed.
      * Mirrors the [activeLink] pattern: observe it to show
      * [com.jjrodcast.textkit.ui.TextKitColorsPopup], which reads [currentTextColor] to mark the active
@@ -177,7 +187,10 @@ class TextKitState(
     var activeColorAnchor by mutableStateOf<Rect?>(null)
         private set
 
-    /** Opens the colors popup anchored at [anchor] (e.g. the formatting bar's palette button bounds). */
+    var activeAlignAnchor by mutableStateOf<Rect?>(null)
+        private set
+
+    /** Opens the colors popup anchored at [activeColorAnchor] (e.g. the formatting bar's palette button bounds). */
     fun openColorPicker(anchor: Rect) {
         activeColorAnchor = anchor
     }
@@ -185,6 +198,16 @@ class TextKitState(
     /** Closes the colors popup. */
     fun dismissColorPicker() {
         activeColorAnchor = null
+    }
+
+    /** Opens the alignment popup anchored at [activeAlignAnchor] (e.g. the formatting bar's alignment button bounds). */
+    fun openAlignPicker(anchor: Rect) {
+        activeAlignAnchor = anchor
+    }
+
+    /** Closes the align popup */
+    fun dismissAlignPicker() {
+        activeAlignAnchor = null
     }
 
     internal var textLayoutResult: TextLayoutResult? by mutableStateOf(null)
@@ -456,7 +479,7 @@ class TextKitState(
             val size = (lastMarks.firstOrNull { it is TextStyleMark } as? TextStyleMark)
                 ?.attrs?.fontSize ?: configuration.fontSize
             lastMarks = lastMarks.filterNotTo(mutableSetOf()) { it is TextStyleMark } +
-                TextStyleMark(TextStyleAttrs(color = color, fontSize = size))
+                    TextStyleMark(TextStyleAttrs(color = color, fontSize = size))
             return true
         }
         // The Color transaction resolves the marks from the selection itself (preserving font size),
@@ -488,6 +511,19 @@ class TextKitState(
         }
         return applyTextStyle(fontSize = fontSize, color = null)
     }
+
+    /**
+     * Sets the horizontal [textAlign] of the paragraph(s) the current selection touches. Routed as an
+     * alignment change (not a mark), so it applies to whole paragraphs even with a collapsed caret.
+     * Returns whether the document changed.
+     */
+    fun applyTextAlignment(textAlign: TextKitTextAlign): Boolean =
+        updateDocument(
+            selection,
+            TextEditorSelectedMark.NONE,
+            TextEditorSelectedMark.NONE,
+            TextEditorTransactionType.Alignment(textAlign)
+        )
 
     /**
      * Toggles an ordered (numbered) list over the paragraph(s) the current selection touches,
@@ -771,6 +807,7 @@ class TextKitState(
         val searchType = getSelectedMarksWithType()
         lastMarks = searchType.marks
         lastListItem = searchType.listItem
+        currentTextAlign = searchType.textAlign
         lastEmbedType = embedTypeAtCaret()
         updateLinkHighlight(searchType)
         notifyLinkAtSelection(searchType)
@@ -1134,11 +1171,12 @@ class TextKitState(
 
     private fun updateAnnotatedString(selection: TextRange) {
         annotatedString = defaultAnnotatedStringFormatting().withLinkHighlight()
-        val text = annotatedString.text
-        // Build the field value with the NEW text and the selection together so the selection is
-        // validated against the new length. Applying it via `copy(selection = …)` on the old (shorter)
-        // value clamps it to the OLD length first — e.g. after adding list decorators the selection
-        // would stop short of the new end instead of covering the whole (now longer) document.
+        // The field text keeps the real '\n' (the piece table / offsets / selection are indexed by
+        // it). The displayed string renders each '\n' as a zero-width space of the SAME length (see
+        // [defaultAnnotatedStringFormatting]), so OffsetMapping stays Identity — cursor and piece-table
+        // offsets line up 1:1 — while the per-paragraph ParagraphStyle boundary provides the line break
+        // without an extra empty gap line.
+        val text = manager.text
         val coerced = TextRange(
             start = selection.start.coerceIn(0, text.length),
             end = selection.end.coerceIn(0, text.length),
@@ -1151,6 +1189,7 @@ class TextKitState(
     /**
      * Paints the active [linkSelectionRange] as a translucent background so a tapped link reads
      * like a highlight (no selection handles). Returns the string unchanged when no link is active.
+     * Offsets are identity (display length == field length), so the field range is used directly.
      */
     private fun AnnotatedString.withLinkHighlight(): AnnotatedString {
         val range = linkSelectionRange ?: return this
@@ -1166,24 +1205,17 @@ class TextKitState(
     }
 
     private fun defaultAnnotatedStringFormatting(): AnnotatedString {
+        val fieldLength = manager.text.length
         return buildAnnotatedString {
-            // A single ParagraphStyle wraps the whole document. Wrapping each paragraph in its own
-            // ParagraphStyle turned every trailing '\n' into a full-height empty line (visible as
-            // large gaps between paragraphs); keeping one paragraph block makes the '\n' plain line
-            // breaks (single spacing) while every character — and thus the offset mapping — is kept.
-            withStyle(DefaultParagraphStyle) {
-                paragraphs.forEach { paragraph ->
+            // One ParagraphStyle per paragraph so each can carry its own horizontal alignment —
+            // `textAlign` is a ParagraphStyle-only property in Compose, so per-paragraph alignment is
+            // impossible with a single document-wide block. See [displayTextOf] for how the separating
+            // '\n' is rendered so there is no gap line and the caret behaves correctly.
+            paragraphs.forEach { paragraph ->
+                withStyle(DefaultParagraphStyle.copy(textAlign = paragraph.textAlign.toComposeTextAlign())) {
                     paragraph.children.forEach { child ->
-                        if (child.text.endsWith(lineBreak)) {
-                            val text = child.text.dropLast(1)
-                            withStyle(child.createStyle(manager.configuration, highlightColor)) {
-                                append(text)
-                            }
-                            append(lineBreak)
-                        } else {
-                            withStyle(child.createStyle(manager.configuration, highlightColor)) {
-                                append(child.text)
-                            }
+                        withStyle(child.createStyle(manager.configuration, highlightColor)) {
+                            append(displayTextOf(child, fieldLength))
                         }
                     }
                 }
@@ -1191,16 +1223,26 @@ class TextKitState(
         }
     }
 
+    /** Maps the engine's paragraph [TextKitTextAlign] to Compose's [TextAlign] for a [ParagraphStyle]. */
+    private fun TextKitTextAlign.toComposeTextAlign(): TextAlign = when (this) {
+        TextKitTextAlign.Left -> TextAlign.Left
+        TextKitTextAlign.Center -> TextAlign.Center
+        TextKitTextAlign.Right -> TextAlign.Right
+        TextKitTextAlign.Justify -> TextAlign.Justify
+    }
+
     private fun createViewerAnnotatedString(): Pair<AnnotatedString, Map<String, InlineTextContent>> {
         val inlineContent = mutableMapOf<String, InlineTextContent>()
+        val fieldLength = manager.text.length
         val annotatedString = buildAnnotatedString {
-            withStyle(DefaultParagraphStyle) {
-                paragraphs.forEach { paragraph ->
+            // Same per-paragraph pattern as edit mode: one aligned ParagraphStyle per paragraph, with
+            // the separating '\n' rendered per [displayTextOf] (no gap line). The viewer is read-only
+            // (no TextField / OffsetMapping), so styles are applied to the appended run via
+            // withStyle/withLink instead of by field offsets.
+            paragraphs.forEach { paragraph ->
+                withStyle(DefaultParagraphStyle.copy(textAlign = paragraph.textAlign.toComposeTextAlign())) {
                     paragraph.children.forEach { child ->
                         val id = "${child.start}-${child.end}"
-                        val text = if (child.text.endsWith(lineBreak)) {
-                            child.text
-                        } else child.text
                         if (child.decorator is TextDecoratorModel.TaskDecoratorModel) {
                             val taskDecorator = child.decorator
                             appendInlineContent(id, taskDecorator.createDecoratorString())
@@ -1220,13 +1262,19 @@ class TextKitState(
                                 }
                             }
                         } else {
-                            pushStringAnnotation(id, text)
+                            val content = displayTextOf(child, fieldLength)
+                            pushStringAnnotation(id, content)
                             if (child.marks.any { it is LinkMark }) {
                                 withLink(
                                     link = LinkAnnotation.Url(
                                         url = child.marks.filterIsInstance<LinkMark>()
                                             .first().attrs.href,
-                                        styles = TextLinkStyles(child.createStyle(manager.configuration, highlightColor)),
+                                        styles = TextLinkStyles(
+                                            child.createStyle(
+                                                manager.configuration,
+                                                highlightColor
+                                            )
+                                        ),
                                         linkInteractionListener = {
                                             val url = (it as LinkAnnotation.Url).url
                                             onUrlClicked?.invoke(
@@ -1237,15 +1285,12 @@ class TextKitState(
                                         }
                                     )
                                 ) {
-                                    append(text)
+                                    append(content)
                                 }
                             } else {
-                                append(text)
-                                addStyle(
-                                    style = child.createStyle(manager.configuration, highlightColor),
-                                    start = child.start,
-                                    end = child.end
-                                )
+                                withStyle(child.createStyle(manager.configuration, highlightColor)) {
+                                    append(content)
+                                }
                             }
                             pop()
                         }
@@ -1390,5 +1435,38 @@ class TextKitState(
         )
     }
 
-    private val lineBreak = "\n"
+    /**
+     * The text a [child] contributes to the DISPLAY string.
+     *
+     * Every paragraph-separating '\n' becomes a [PARAGRAPH_SEPARATOR_CHAR] (a space), EXCEPT a '\n'
+     * that is the very last character of the document: that one is kept real so a trailing empty
+     * paragraph still renders as a blank line the caret can land on. (A space is not a line break, so
+     * converting the final '\n' would drop that trailing blank line.) All replacements are 1:1 in
+     * length, so the display length equals the field text and [OffsetMapping.Identity] stays valid.
+     */
+    private fun displayTextOf(child: TextEditorItem, fieldLength: Int): String {
+        val endsDocument = child.end == fieldLength && child.text.endsWith(LINE_BREAK_CHAR)
+        return if (endsDocument) {
+            child.text.dropLast(1).replace(LINE_BREAK_CHAR, PARAGRAPH_SEPARATOR_CHAR) + LINE_BREAK_CHAR
+        } else {
+            child.text.replace(LINE_BREAK_CHAR, PARAGRAPH_SEPARATOR_CHAR)
+        }
+    }
+
+    private val LINE_BREAK_CHAR = '\n'
+
+    /**
+     * The paragraph-separating '\n' is shown in the DISPLAY as a regular space. A space:
+     *  - is NOT a line break, so the per-paragraph ParagraphStyle boundary is the only break — no
+     *    extra empty "gap" line between paragraphs;
+     *  - HAS width, so the caret at the end of a paragraph (before the space) is a distinct target
+     *    from the start of the next paragraph (after it). A zero-width char collapses both to the same
+     *    x, so Compose resolved the end of a line to the next paragraph (the caret jumped down); the
+     *    width also makes empty-paragraph lines clickable;
+     *  - is one character, so the display length equals the field text (which keeps the real '\n'),
+     *    so OffsetMapping.Identity stays valid and every offset maps 1:1 to the piece table.
+     *
+     * A trailing space at a line end is not painted, so it stays visually invisible.
+     */
+    private val PARAGRAPH_SEPARATOR_CHAR = ' '
 }

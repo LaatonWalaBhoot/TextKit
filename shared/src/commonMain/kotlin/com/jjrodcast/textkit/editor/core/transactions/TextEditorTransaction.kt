@@ -212,7 +212,7 @@ internal class TextEditorTransaction(private val configuration: TextKitConfigura
 
     internal fun getLineContent(start: Int, end: Int) = pieceTable.getLineContent(start, end)
 
-    internal fun getLineContentWithNeigborParagraphs(start: Int, end: Int) =
+    internal fun getLineContentWithNeighborParagraphs(start: Int, end: Int) =
         pieceTable.getLineContentWithNeighborListItems(start, end)
 
     override fun updateDocument(
@@ -223,6 +223,11 @@ internal class TextEditorTransaction(private val configuration: TextKitConfigura
         range: TextRange,
         transactionType: TextEditorTransactionType
     ) = when {
+        transactionType is TextEditorTransactionType.Alignment -> {
+            // Paragraph-level: retags whole paragraphs, so it runs even for a collapsed caret.
+            pieceTable.updateTextAlign(range.min, range.max, transactionType.textAlign) to range
+        }
+
         prevListItem != currListItem -> {
             ListItemTransaction.toggleParagraphsToListItems(this, prevListItem, currListItem, range)
         }

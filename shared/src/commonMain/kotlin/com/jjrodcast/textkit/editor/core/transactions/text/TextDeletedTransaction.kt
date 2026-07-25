@@ -195,7 +195,7 @@ internal object TextDeletedTransaction {
 
         if (paragraphType != nextParagraphType) return emptyList()
 
-        val mergedParagraphs = getLineContentWithNeigborParagraphs(paragraphOffset, nextParagraphOffset)
+        val mergedParagraphs = getLineContentWithNeighborParagraphs(paragraphOffset, nextParagraphOffset)
         val listParagraphs = mergedParagraphs.paragraphs.filter { it.paragraphType == paragraphType }
         val positionalItems = ListsConverter.fromPieceMultiParagraph(MultiPieceParagraph(listParagraphs, lines.start, lines.end))
         val reorderedItems = PositionalListItemUtils.reorderItems(positionalItems)

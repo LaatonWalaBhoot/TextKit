@@ -20,11 +20,8 @@ import com.jjrodcast.textkit.editor.utils.removeLineBreakSuffix
  */
 internal fun TextEditorModel.toInlineNode(): BaseText {
     val token = piece.token
-    return if (token != null) {
-        token.toInlineNode(piece.marks.toSet())
-    } else {
-        Text(text = text.removeLineBreakSuffix(), marks = piece.marks.toSet())
-    }
+    return token?.toInlineNode(piece.marks.toSet())
+        ?: Text(text = text.removeLineBreakSuffix(), marks = piece.marks.toSet())
 }
 
 /** Rebuilds the concrete inline node for [RichToken.type]; unknown types fall back to a [Mention]. */

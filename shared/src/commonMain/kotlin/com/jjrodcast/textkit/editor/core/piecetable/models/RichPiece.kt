@@ -1,6 +1,7 @@
 package com.jjrodcast.textkit.editor.core.piecetable.models
 
 import com.jjrodcast.textkit.editor.core.parser.Mark
+import com.jjrodcast.textkit.editor.core.parser.TextAlign
 import com.jjrodcast.textkit.editor.utils.intersect
 import kotlinx.serialization.Serializable
 
@@ -11,6 +12,11 @@ internal data class RichPiece(
     override val length: Int,
     override val decorator: TextDecoratorModel? = null,
     val marks: Set<Mark> = emptySet(),
+    // Paragraph-level horizontal alignment carried on every piece of the paragraph. It is a block
+    // attribute (all pieces of a paragraph share the same value), stored per-piece so it survives the
+    // rope's split/merge/splice operations via `copy()`. Read back on serialization from the
+    // paragraph's pieces (see PieceTableConverter).
+    val textAlign: TextAlign = TextAlign.Left,
     // When non-null this piece is an atomic trigger token (mention, hashtag, …): its visible text is
     // "<triggerKey><label>" and its identity (type + id + label) lives here so it survives the
     // piece-table round-trip and can be serialized back to the right inline node. Selection/editing

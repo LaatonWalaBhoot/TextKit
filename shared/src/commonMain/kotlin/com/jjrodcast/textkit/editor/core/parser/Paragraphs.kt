@@ -21,7 +21,10 @@ internal sealed class BaseParagraph {
 
 @Serializable
 @SerialName(ParagraphTypes.Paragraph)
-internal data class Paragraph(val content: List<BaseText> = emptyList()) : BaseParagraph() {
+internal data class Paragraph(
+    val attrs: ParagraphAttrs = ParagraphAttrs(),
+    val content: List<BaseText> = emptyList()
+) : BaseParagraph() {
     override val type: String = ParagraphTypes.Paragraph
 }
 
