@@ -1171,11 +1171,6 @@ class TextKitState(
 
     private fun updateAnnotatedString(selection: TextRange) {
         annotatedString = defaultAnnotatedStringFormatting().withLinkHighlight()
-        // The field text keeps the real '\n' (the piece table / offsets / selection are indexed by
-        // it). The displayed string renders each '\n' as a zero-width space of the SAME length (see
-        // [defaultAnnotatedStringFormatting]), so OffsetMapping stays Identity — cursor and piece-table
-        // offsets line up 1:1 — while the per-paragraph ParagraphStyle boundary provides the line break
-        // without an extra empty gap line.
         val text = manager.text
         val coerced = TextRange(
             start = selection.start.coerceIn(0, text.length),
