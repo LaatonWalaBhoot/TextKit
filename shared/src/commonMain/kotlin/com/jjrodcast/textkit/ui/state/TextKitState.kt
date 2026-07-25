@@ -62,6 +62,7 @@ import com.jjrodcast.textkit.editor.core.piecetable.models.TextDecoratorModel
 import com.jjrodcast.textkit.editor.core.piecetable.models.TextDecoratorModel.Companion.createDecoratorString
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorAction
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorItem
+import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorItem
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorParagraph
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorSelectedMark
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorTransactionType
