@@ -210,7 +210,7 @@ fun TextKitFormattingBarInternal(
             TextKitFormattingSeparator()
             TextKitTooltipFormattingItem(
                 tooltipText = stringResource(Res.string.underline_text),
-                rememberVectorPainter(Icons.Rounded.FormatUnderlined),
+                painter = rememberVectorPainter(Icons.Rounded.FormatUnderlined),
                 onClick = onUnderlineClick,
                 value = barState.isUnderline,
                 backgroundColor = selectedColor
@@ -218,7 +218,7 @@ fun TextKitFormattingBarInternal(
             TextKitFormattingSeparator()
             TextKitTooltipFormattingItem(
                 tooltipText = stringResource(Res.string.strikethrough_text),
-                rememberVectorPainter(Icons.Rounded.FormatStrikethrough),
+                painter = rememberVectorPainter(Icons.Rounded.FormatStrikethrough),
                 onClick = onStrikeThroughClick,
                 value = barState.isStrikethrough,
                 backgroundColor = selectedColor
@@ -226,7 +226,7 @@ fun TextKitFormattingBarInternal(
             TextKitFormattingSeparator()
             TextKitTooltipFormattingItem(
                 tooltipText = stringResource(Res.string.highlight_text),
-                rememberVectorPainter(Icons.Rounded.FormatColorFill),
+                painter = rememberVectorPainter(Icons.Rounded.FormatColorFill),
                 onClick = onHighlightClick,
                 value = barState.isHighlight,
                 backgroundColor = selectedColor
@@ -234,7 +234,7 @@ fun TextKitFormattingBarInternal(
             TextKitFormattingSeparator()
             TextKitTooltipFormattingItem(
                 tooltipText = stringResource(Res.string.text_color_text),
-                rememberVectorPainter(Icons.Outlined.Palette),
+                painter = rememberVectorPainter(Icons.Outlined.Palette),
                 value = false,
                 isExpandable = true,
                 onClick = { onSizeAndColorClick(textSizeAndColorBounds) },
@@ -246,7 +246,7 @@ fun TextKitFormattingBarInternal(
             TextKitFormattingSeparator()
             TextKitTooltipFormattingItem(
                 tooltipText = stringResource(Res.string.link_text),
-                rememberVectorPainter(Icons.Rounded.Link),
+                painter = rememberVectorPainter(Icons.Rounded.Link),
                 onClick = onLinkClick,
                 value = barState.isLink,
                 backgroundColor = selectedColor
@@ -254,7 +254,7 @@ fun TextKitFormattingBarInternal(
             TextKitFormattingSeparator()
             TextKitTooltipFormattingItem(
                 tooltipText = stringResource(Res.string.ordered_list_text),
-                rememberVectorPainter(Icons.Rounded.FormatListNumbered),
+                painter = rememberVectorPainter(Icons.Rounded.FormatListNumbered),
                 onClick = onOrderedListClick,
                 value = barState.isNumberedList,
                 backgroundColor = selectedColor
@@ -262,7 +262,7 @@ fun TextKitFormattingBarInternal(
             TextKitFormattingSeparator()
             TextKitTooltipFormattingItem(
                 tooltipText = stringResource(Res.string.bulleted_list_text),
-                rememberVectorPainter(Icons.AutoMirrored.Rounded.FormatListBulleted),
+                painter = rememberVectorPainter(Icons.AutoMirrored.Rounded.FormatListBulleted),
                 onClick = onBulletedListClick,
                 value = barState.isBulletedList,
                 backgroundColor = selectedColor
@@ -270,7 +270,7 @@ fun TextKitFormattingBarInternal(
             TextKitFormattingSeparator()
             TextKitTooltipFormattingItem(
                 tooltipText = stringResource(Res.string.align_text),
-                rememberVectorPainter(Icons.AutoMirrored.Rounded.FormatAlignLeft),
+                painter = rememberVectorPainter(Icons.AutoMirrored.Rounded.FormatAlignLeft),
                 value = false,
                 isExpandable = true,
                 onClick = { onTextAlignClick(textAlignBounds) },
@@ -308,7 +308,7 @@ fun TextKitFormattingBarInternal(
             TextKitFormattingDivider()
             TextKitTooltipFormattingItem(
                 tooltipText = stringResource(Res.string.undo_text),
-                rememberVectorPainter(Icons.AutoMirrored.Rounded.Undo),
+                painter = rememberVectorPainter(Icons.AutoMirrored.Rounded.Undo),
                 onClick = { onUndoClick() },
                 value = false,
                 backgroundColor = selectedColor,
@@ -317,7 +317,7 @@ fun TextKitFormattingBarInternal(
             TextKitFormattingSeparator()
             TextKitTooltipFormattingItem(
                 tooltipText = stringResource(Res.string.redo_text),
-                rememberVectorPainter(Icons.AutoMirrored.Rounded.Redo),
+                painter = rememberVectorPainter(Icons.AutoMirrored.Rounded.Redo),
                 onClick = { onRedoClick() },
                 value = false,
                 backgroundColor = selectedColor,
