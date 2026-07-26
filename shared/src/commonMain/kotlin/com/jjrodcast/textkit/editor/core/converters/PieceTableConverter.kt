@@ -501,7 +501,8 @@ internal object PieceTableConverter {
      * Then we create a [BaseParagraph] with the content or an empty list. This is necessary because a paragraph can be represented as empty.
      *
      * @param textStyled The list of [TextEditorModel] elements that make up the paragraph's styled text.
-     * @return A list of [BaseParagraph] derived from the given text elements, using [EmptyParagraph] for blank content.
+     * @return A list of [BaseParagraph] derived from the given text elements; blank paragraphs still
+     * carry [ParagraphAttrs.textAlign] when set on the underlying pieces.
      */
     /**
      * Merges two [PositionalParagraph] lists that are each already sorted by [PositionalParagraph.index]
@@ -539,11 +540,14 @@ internal object PieceTableConverter {
                 .fastMap { it.toInlineNode() }
 
             when (texts.size) {
-                0 -> EmptyParagraph
-                1 -> { // When the text doesn't have content
+                0 -> Paragraph(attrs = ParagraphAttrs(textAlign = textAlign))
+                1 -> {
                     val first = texts.first()
-                    if (first is Text && first.text.isEmpty()) EmptyParagraph
-                    else Paragraph(attrs = ParagraphAttrs(textAlign = textAlign), content = texts)
+                    if (first is Text && first.text.isEmpty()) {
+                        Paragraph(attrs = ParagraphAttrs(textAlign = textAlign))
+                    } else {
+                        Paragraph(attrs = ParagraphAttrs(textAlign = textAlign), content = texts)
+                    }
                 }
 
                 else -> Paragraph(attrs = ParagraphAttrs(textAlign = textAlign), content = texts)

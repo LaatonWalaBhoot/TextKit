@@ -98,4 +98,55 @@ class TextAlignTest {
         assertEquals(TextAlign.Center, paragraphs[0].textAlign)
         assertEquals(TextAlign.Left, paragraphs[1].textAlign)
     }
+
+    @Test
+    fun emptyTopLevelParagraphAlignmentSurvivesJsonRoundTrip() {
+        val json = """
+            {"type":"doc","content":[
+              {"type":"paragraph","attrs":{"textAlign":"center"}},
+              {"type":"paragraph","content":[{"type":"text","text":"x"}]}
+            ]}
+        """
+        val out = editorFrom(json).toJson()
+        assertTrue(out.contains("\"textAlign\":\"center\""), "json: $out")
+    }
+
+    @Test
+    fun emptyTopLevelParagraphAlignmentSurvivesAfterUserApply() {
+        val doc = """
+            {"type":"doc","content":[
+              {"type":"paragraph","content":[{"type":"text","text":"A"}]},
+              {"type":"paragraph"},
+              {"type":"paragraph","content":[{"type":"text","text":"B"}]}
+            ]}
+        """
+        val editor = editorFrom(doc)
+        val emptyOffset = editor.text.indexOf("\n") + 1
+        editor.setTextAlign(TextRange(emptyOffset), TextAlign.Center)
+        val out = editor.toJson()
+        assertTrue(out.contains("\"textAlign\":\"center\""), "json: $out")
+    }
+
+    @Test
+    fun emptyListItemParagraphAlignmentSurvivesJsonRoundTrip() {
+        val json = """
+            {"type":"doc","content":[
+              {"type":"bulletList","content":[{"type":"listItem","content":[
+                {"type":"paragraph","attrs":{"textAlign":"center"},"content":[{"type":"text","text":""}]}
+              ]}]}
+            ]}
+        """
+        val out = editorFrom(json).toJson()
+        assertTrue(out.contains("\"textAlign\":\"center\""), "json: $out")
+    }
+
+    @Test
+    fun listItemAlignmentSurvivesAfterClearingText() {
+        val editor = editorFrom(SampleDocuments.ORDERED_LIST)
+        val range = editor.rangeOf("one")
+        editor.setTextAlign(range, TextAlign.Right)
+        editor.deleteText(range.start, range.length)
+        val out = editor.toJson()
+        assertTrue(out.contains("\"textAlign\":\"right\""), "json: $out")
+    }
 }
