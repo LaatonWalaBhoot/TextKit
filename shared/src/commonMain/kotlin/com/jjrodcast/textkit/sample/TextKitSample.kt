@@ -40,6 +40,7 @@ import com.jjrodcast.textkit.ui.TextKitLinkPopup
 import com.jjrodcast.textkit.ui.TextKitScreen
 import com.jjrodcast.textkit.ui.TextKitSlashCommandPopup
 import com.jjrodcast.textkit.ui.TextKitTokenPopup
+import com.jjrodcast.textkit.ui.TextKitViewer
 import com.jjrodcast.textkit.ui.model.TextKitCommand
 import com.jjrodcast.textkit.ui.model.TextKitTokenSuggestion
 import com.jjrodcast.textkit.ui.state.rememberTextKitFormattingBarState
@@ -108,6 +109,23 @@ private val sampleCommands = listOf(
         it.insertText("Best regards,")
     },
 )
+
+@Composable
+fun TextKitViewerSample() {
+    val configuration = remember {
+        createTextKitConfiguration {
+            addTrigger { TextKitTrigger.TextKitMentionTrigger() }
+            addTrigger { TextKitTrigger.TextKitHashtagTrigger() }
+            addTrigger { TextKitTrigger.TextKitSlashTrigger() }
+        }
+    }
+    val state =
+        rememberTextKitState(json = DocumentUtils.complexJsonV2, configuration = configuration)
+
+    TextKitScreen(modifier = Modifier.padding(16.dp)) {
+        TextKitViewer(state)
+    }
+}
 
 @Composable
 fun TextKitSample() {

@@ -4,10 +4,11 @@
 
 TextKit is a rope-backed, piece-table rich-text editor engine for **Compose Multiplatform**
 (Android, iOS, Desktop/JVM and Web — Wasm & JS). It ships a `TextKitState` holder, ready-made
-editor composables, a formatting bar, link popups, a generalized **trigger** system (mentions,
-hashtags, slash commands), **embedded blocks** (images and other non-renderable content as clickable
-placeholders, plus fully **editable tables**), full **undo/redo** with coalescing, and lossless
-(de)serialization to a **ProseMirror-style JSON document**.
+editor composables, a formatting bar, link popups, **paragraph alignment** (left / center / right /
+justify), a generalized **trigger** system (mentions, hashtags, slash commands), **embedded blocks**
+(images and other non-renderable content as clickable placeholders, plus fully **editable tables**),
+full **undo/redo** with coalescing, and lossless (de)serialization to a **ProseMirror-style JSON
+document**.
 
 Unlike editors that round-trip through HTML or Markdown, TextKit persists a structured JSON document
 (`type: "doc"` → block nodes → inline runs with marks), so styling, lists, links and inline tokens
@@ -23,6 +24,7 @@ Unlike editors that round-trip through HTML or Markdown, TextKit persists a stru
 - [Inline styling](#inline-styling)
 - [Text style (color & size)](#text-style-color--size)
 - [Lists](#lists)
+- [Text alignment](#text-alignment)
 - [Links](#links)
 - [Triggers: mentions, hashtags & slash commands](#triggers-mentions-hashtags--slash-commands)
 - [Embedded blocks](#embedded-blocks)
@@ -94,6 +96,8 @@ Observable properties you can read in composition:
 | `activeEmbed` | `EmbedInfo?` | The embedded block under the caret/tap, or `null`. Observe it to show an embed popup. |
 | `activeColorAnchor` | `Rect?` | Window bounds the color picker is anchored to while open, or `null`. Observe it to show `TextKitColorsPopup`. |
 | `currentTextColor` | `Color?` | The selection's current text color, or `null` when it has none. Seeds the color picker's marked swatch. |
+| `currentTextAlign` | `TextAlign?` | Alignment of the paragraph(s) at the caret/selection, or `null` for a "mixed" selection (paragraphs with differing alignment). Marks the active alignment button. |
+| `activeAlignAnchor` | `Rect?` | Window bounds the alignment picker is anchored to while open, or `null`. Observe it to show `TextKitAlignPopup`. |
 | `canUndo` / `canRedo` | `Boolean` | Whether an undo / redo step is available (drives toolbar button enablement). |
 | `viewerTextValue` | `Pair<AnnotatedString, Map<String, InlineTextContent>>` | Rendered content for read-only display. |
 
@@ -185,6 +189,49 @@ state.toggleOrderedList(selected = false)  // back to plain paragraphs
 The document format also supports **task lists** (checkbox items); these render (including their
 checkboxes in viewer mode) when present in the loaded document. The current caret's list kind is
 exposed via `state.lastListItem`.
+
+## Text alignment
+
+Set the horizontal alignment of the paragraph(s) the selection touches. Unlike the inline marks,
+alignment is a **paragraph attribute**, not a character mark: it retags whole paragraphs, so it
+applies to the entire paragraph even with a collapsed caret (no text needs to be selected).
+
+`applyTextAlignment` takes a `TextAlign` (`Left`, `Center`, `Right`, `Justify`) and returns whether
+the document changed:
+
+```kotlin
+import com.jjrodcast.textkit.editor.core.parser.TextAlign
+
+state.applyTextAlignment(TextAlign.Center)
+state.applyTextAlignment(TextAlign.Right)
+state.applyTextAlignment(TextAlign.Justify)
+state.applyTextAlignment(TextAlign.Left)   // back to the default
+```
+
+The alignment at the caret is exposed via `state.currentTextAlign` (`TextAlign?`); it is `null` when
+the selection spans paragraphs with differing alignment (a "mixed" selection). Alignment
+round-trips losslessly through the JSON document as the ProseMirror/TipTap `textAlign` attribute on
+`paragraph` and `heading` nodes (see [Document format](#document-format)); the default `Left` is
+omitted from `attrs`.
+
+### Alignment popup
+
+TextKit ships `TextKitAlignPopup`, a small picker with the four alignment options that marks the
+active one from `state.currentTextAlign`. Drive it the same way as the color and link popups — via
+editor state. Render it in the same `Box` as the editor:
+
+```kotlin
+import com.jjrodcast.textkit.ui.TextKitAlignPopup
+
+Box {
+    TextKitEditor(state = state)
+    TextKitAlignPopup(state = state) // defaults: applies the pick + closes the popup
+}
+```
+
+**Related state APIs:** `state.openAlignPicker(bounds)` / `state.dismissAlignPicker()` (show/hide the
+popup) and `state.activeAlignAnchor` (observable anchor, non-null while open). The formatting bar's
+alignment button hands you its bounds via `onTextAlignClick` (see [Formatting bar](#formatting-bar)).
 
 ## Links
 
@@ -464,6 +511,7 @@ TextKitScreen { // MaterialTheme + Scaffold wrapper (optional)
         onHighlightClick = state::applyHighlight,
         onLinkClick = { state.applyLink() },
         onTextAndColorClick = { state.openColorPicker(it) },
+        onTextAlignClick = { state.openAlignPicker(it) },
         onOrderedListClick = state::toggleOrderedList,
         onBulletedListClick = state::toggleUnorderedList,
         onUndoClick = { state.undo() },
@@ -475,15 +523,19 @@ TextKitScreen { // MaterialTheme + Scaffold wrapper (optional)
         TextKitEditor(state = state)
         TextKitLinkPopup(state = state, /* onEdit / onRemove */)
         TextKitColorsPopup(state = state, colors = barState.colors)
+        TextKitAlignPopup(state = state)
         TextKitTokenPopup(state = state) { /* users / tags by active trigger */ users }
         TextKitSlashCommandPopup(state = state, commands = commands)
     }
 }
 ```
 
-Each `on…Click` receives a `Boolean` (the new toggle value). `TextKitFormattingBarState` exposes
-`isBold`, `isItalic`, `isUnderline`, `isStrikethrough`, `isHighlight`, `isLink`, `isNumberedList`,
-`isBulletedList`, `isCheckList`.
+Each `on…Click` receives a `Boolean` (the new toggle value), except the two picker buttons —
+`onTextAndColorClick` and `onTextAlignClick` — which hand you the button's bounds (`Rect`) so their
+popups can anchor to it (see [Text color popup](#text-color-popup) and
+[Text alignment](#text-alignment)). `TextKitFormattingBarState` exposes `isBold`, `isItalic`,
+`isUnderline`, `isStrikethrough`, `isHighlight`, `isLink`, `isNumberedList`, `isBulletedList`,
+`isCheckList`.
 
 ### Text color popup
 
@@ -615,6 +667,7 @@ list of block nodes; each block holds inline runs, and inline runs carry `marks`
   "content": [
     {
       "type": "paragraph",
+      "attrs": { "textAlign": "center" },
       "content": [
         { "type": "text", "text": "Hello " },
         { "type": "text", "marks": [{ "type": "bold" }], "text": "world" },
@@ -635,7 +688,9 @@ list of block nodes; each block holds inline runs, and inline runs carry `marks`
 ```
 
 **Block nodes:** `paragraph`, `heading` (`attrs.level` 1–6), `orderedList`, `bulletList`, `taskList`,
-`blockquote`, plus `listItem` / `taskItem` (`attrs.checked`) inside lists.
+`blockquote`, plus `listItem` / `taskItem` (`attrs.checked`) inside lists. `paragraph` and `heading`
+also carry an optional `attrs.textAlign` (`"left"` | `"center"` | `"right"` | `"justify"`); the
+default `"left"` is omitted, and any unrecognized value coerces back to `"left"` on load.
 
 **Inline nodes:** `text`, `hardBreak`, and atomic trigger tokens `mention` and `hashtag` (both with
 `attrs.id`, `attrs.label`). Slash (`/`) commands are ephemeral actions and are **not** persisted as
