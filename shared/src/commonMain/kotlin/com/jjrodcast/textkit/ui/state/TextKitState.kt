@@ -1044,9 +1044,15 @@ class TextKitState(
     fun linkBoundingBox(range: TextRange): Rect? {
         val layout = textLayoutResult ?: return null
         val length = layout.layoutInput.text.length
-        if (range.min !in 0..length || range.max !in 0..length || range.min >= range.max) return null
-        val start = layout.getBoundingBox(range.min)
-        val end = layout.getBoundingBox((range.max - 1).coerceAtLeast(range.min))
+        val fieldLength = textFieldValue.text.length
+        val fieldMin = range.min.coerceIn(0, fieldLength)
+        val fieldMax = range.max.coerceIn(fieldMin, fieldLength)
+        if (fieldMin >= fieldMax) return null
+        val displayMin = editorOffsetMapping.originalToTransformed(fieldMin)
+        val displayMax = editorOffsetMapping.originalToTransformed(fieldMax)
+        if (displayMin !in 0..length || displayMax !in 0..length || displayMin >= displayMax) return null
+        val start = layout.getBoundingBox(displayMin)
+        val end = layout.getBoundingBox((displayMax - 1).coerceAtLeast(displayMin))
         return if (start.top == end.top) Rect(start.left, start.top, end.right, end.bottom)
         else start
     }
@@ -1235,19 +1241,21 @@ class TextKitState(
         val fieldLength = manager.text.length
         editorSegments = buildEditorSegments(paragraphs, fieldLength, ::displayTextOf)
 
-        annotatedString = ListItemEditorTransform.buildDisplayAnnotatedString(
+        val baseDisplay = ListItemEditorTransform.buildDisplayAnnotatedString(
             paragraphs = paragraphs,
             fieldLength = fieldLength,
             defaultStyle = DefaultParagraphStyle,
             toComposeAlign = { it.toComposeTextAlign() },
             displayTextOf = ::displayTextOf,
             spanStyleOf = { child -> child.createStyle(manager.configuration, highlightColor) },
-        ).withLinkHighlight()
+        )
 
         editorOffsetMapping = ListItemEditorTransform.offsetMapping(
             segments = editorSegments,
-            totalDisplayLength = annotatedString.length,
+            totalDisplayLength = baseDisplay.length,
         )
+
+        annotatedString = baseDisplay.withLinkHighlight(editorOffsetMapping)
 
         val text = manager.text
         val coerced = TextRange(
@@ -1262,17 +1270,23 @@ class TextKitState(
     /**
      * Paints the active [linkSelectionRange] as a translucent background so a tapped link reads
      * like a highlight (no selection handles). Returns the string unchanged when no link is active.
-     * Offsets are identity (display length == field length), so the field range is used directly.
+     *
+     * [linkSelectionRange] is stored in **field** (piece-table) offsets. This string is the editor
+     * **display** text, which can be shorter when split list layout omits gutter characters; [mapping]
+     * converts field indices to display indices (identity for plain paragraphs).
      */
-    private fun AnnotatedString.withLinkHighlight(): AnnotatedString {
+    private fun AnnotatedString.withLinkHighlight(mapping: OffsetMapping): AnnotatedString {
         val range = linkSelectionRange ?: return this
-        if (range.min >= range.max || range.max > text.length) return this
+        if (range.min >= range.max) return this
+        val displayMin = mapping.originalToTransformed(range.min)
+        val displayMax = mapping.originalToTransformed(range.max)
+        if (displayMin >= displayMax || displayMax > text.length) return this
         return buildAnnotatedString {
             append(this@withLinkHighlight)
             addStyle(
                 SpanStyle(background = configuration.linkColor.copy(alpha = 0.20f)),
-                range.min,
-                range.max
+                displayMin,
+                displayMax
             )
         }
     }

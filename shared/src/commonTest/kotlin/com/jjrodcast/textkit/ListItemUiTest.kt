@@ -15,6 +15,7 @@ import com.jjrodcast.textkit.ui.listlayout.viewerIndentLabel
 import com.jjrodcast.textkit.ui.listlayout.viewerMarkerLabel
 import com.jjrodcast.textkit.ui.state.TextKitState
 import kotlin.test.Test
+import kotlin.test.assertNotNull
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -310,6 +311,42 @@ class ListItemUiTest {
             displayOffset = second.displayStart,
         )
         assertEquals(second.fieldStart + second.gutterLength, startOfSecond)
+    }
+
+    @Test
+    fun linkHighlightOnListItemUsesDisplayOffsets() {
+        val doc = """
+            {"type":"doc","content":[
+              {"type":"orderedList","attrs":{"start":1},"content":[
+                {"type":"listItem","content":[{"type":"paragraph","content":[
+                  {"type":"text","text":"visit "},
+                  {"type":"text","marks":[{"type":"link","attrs":{"href":"https://test.com","target":"_blank"}}],"text":"test"},
+                  {"type":"text","text":" now"}
+                ]}]}
+              ]}
+            ]}
+        """
+        val state = stateWith(doc)
+        val fieldText = state.textFieldValue.text
+        val linkStart = fieldText.indexOf("test")
+        assertTrue(linkStart > 0)
+        state.onTextFieldChange(state.textFieldValue.copy(selection = TextRange(linkStart + 2)))
+
+        val transformed = state.visualTransformation.filter(AnnotatedString(fieldText))
+        val mapping = transformed.offsetMapping
+        val displayStart = mapping.originalToTransformed(linkStart)
+        val displayEnd = mapping.originalToTransformed(linkStart + "test".length)
+        assertTrue(displayStart < linkStart, "display indices omit the list gutter")
+
+        val caretHighlightAlpha = 0.20f
+        val highlight = transformed.text.spanStyles.firstOrNull {
+            val bg = it.item.background
+            bg != null && bg.alpha == caretHighlightAlpha
+        }
+        assertNotNull(highlight, "collapsed caret on a list-item link should paint a background highlight")
+        assertEquals(displayStart, highlight.start)
+        assertEquals(displayEnd, highlight.end)
+        assertEquals("test", transformed.text.text.substring(displayStart, displayEnd))
     }
 
     @Test
