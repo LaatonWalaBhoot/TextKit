@@ -7,12 +7,14 @@ TextKit is a rope-backed, piece-table rich-text editor engine for **Compose Mult
 editor composables, a formatting bar, link popups, **paragraph alignment** (left / center / right /
 justify), a generalized **trigger** system (mentions, hashtags, slash commands), **embedded blocks**
 (images and other non-renderable content as clickable placeholders, plus fully **editable tables**),
-full **undo/redo** with coalescing, and lossless (de)serialization to a **ProseMirror-style JSON
-document**.
+full **undo/redo** with coalescing, lossless (de)serialization to a **ProseMirror-style JSON
+document**, and export to **HTML** and **GitHub Flavored Markdown**.
 
 Unlike editors that round-trip through HTML or Markdown, TextKit persists a structured JSON document
 (`type: "doc"` → block nodes → inline runs with marks), so styling, lists, links and inline tokens
-(mentions, hashtags) survive an exact load → edit → export cycle.
+(mentions, hashtags) survive an exact load → edit → export cycle. When you need to share the content,
+`toHtml()` and `toMarkdown()` emit those formats on demand (export only — see
+[Reading the content](#reading-the-content)).
 
 
 ## Table of contents
