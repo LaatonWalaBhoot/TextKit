@@ -87,7 +87,7 @@ internal class MarkdownSerializer : DocumentSerializer {
                 .joinToString(separator = "\n")
         }
 
-        is TaskList -> paragraph.content.joinToString(separator = "\n") { taskRow(it) }
+        is TaskList -> paragraph.items.joinToString(separator = "\n") { taskRow(it) }
 
         is Blockquote -> blockquote(paragraph.content)
 

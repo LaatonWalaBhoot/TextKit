@@ -197,13 +197,14 @@ internal object TextEditorConverter {
             }
 
             is TaskList -> {
-                this.content.fastForEach { text ->
+                val taskItems = this.items
+                taskItems.fastForEach { text ->
                     items.addAll(
                         text.getTextContentWithMarkers(
                             TextDecoratorModel.TaskDecoratorModel(
                                 checked = text.attrs.checked,
                                 level = decorator?.level ?: 0,
-                                nestedCount = content.size
+                                nestedCount = taskItems.size
                             ),
                             configuration
                         )
