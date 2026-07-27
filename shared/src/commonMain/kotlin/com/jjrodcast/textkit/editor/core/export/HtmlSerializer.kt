@@ -84,7 +84,7 @@ internal class HtmlSerializer : DocumentSerializer {
 
         is TaskList -> tag(
             name = Tag.UnorderedList,
-            body = paragraph.content.joinToString(separator = "") { taskItem(it) },
+            body = paragraph.items.joinToString(separator = "") { taskItem(it) },
             attributes = attr(Attr.DataType, TASK_LIST_TYPE),
         )
 

@@ -6,8 +6,11 @@ import kotlinx.serialization.Transient
 
 @Serializable
 @SerialName(ListTypes.TaskList)
-internal data class TaskList(val content: List<TaskListItem> = emptyList()) : BaseParagraph() {
+internal data class TaskList(val content: List<BaseText> = emptyList()) : BaseParagraph() {
     override val type: String = ListTypes.TaskList
+
+    /** The task items — the only kind of node the editor puts in a task list. */
+    val items: List<TaskListItem> get() = content.filterIsInstance<TaskListItem>()
 }
 
 @Serializable
