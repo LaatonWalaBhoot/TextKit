@@ -63,6 +63,36 @@ class ListItemEdgeCasesTest {
         assertTrue(editor.toJson().contains("orderedList"))
     }
 
+    @Test
+    fun typing_in_second_empty_list_item_after_two_enters_at_first_item_end() {
+        val editor = editorFrom(SampleDocuments.ORDERED_LIST)
+        val endOfOne = editor.offsetOf("one") + "one".length
+        repeat(2) { editor.typeText(endOfOne, "\n") }
+        assertEquals(4, editor.listItemCount())
+        val item2ContentStart = editor.getParagraphs()[1].children
+            .first { it.decorator == null }
+            .start
+        editor.typeText(item2ContentStart, "Q")
+        val text = editor.text
+        val qIndex = text.indexOf('Q')
+        val marker2 = text.indexOf("2.")
+        val marker3 = text.indexOf("3.")
+        assertTrue(qIndex > marker2 && qIndex < marker3, "Q must sit in the second list item")
+    }
+
+    @Test
+    fun typing_on_empty_list_item_after_single_enter() {
+        val editor = editorFrom(SampleDocuments.ORDERED_LIST)
+        val endOfOne = editor.offsetOf("one") + "one".length
+        val caret = editor.typeText(endOfOne, "\n")
+        editor.typeText(caret.min, "Q")
+        val text = editor.text
+        val qIndex = text.indexOf('Q')
+        val marker2 = text.indexOf("2.")
+        val marker3 = text.indexOf("3.") // "two" was renumbered to 3
+        assertTrue(qIndex > marker2 && qIndex < marker3, "Q must sit in the new empty second item")
+    }
+
     // ── Converting selections ──────────────────────────────────────────────────
 
     @Test

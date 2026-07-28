@@ -79,6 +79,8 @@ import com.jjrodcast.textkit.ui.listlayout.ViewerBlock
 import com.jjrodcast.textkit.ui.listlayout.buildEditorSegments
 import com.jjrodcast.textkit.ui.listlayout.buildViewerBlocks
 import com.jjrodcast.textkit.ui.listlayout.buildViewerParagraphContent
+import com.jjrodcast.textkit.ui.listlayout.editorSegmentsNeedOffsetMapping
+import com.jjrodcast.textkit.ui.listlayout.resolveParagraphCaretFieldOffset
 import com.jjrodcast.textkit.ui.listlayout.resolveParagraphOperationOffset
 import com.jjrodcast.textkit.ui.utils.createStyle
 import com.jjrodcast.textkit.ui.utils.restore
@@ -314,6 +316,24 @@ class TextKitState(
         val coerced = displayOffset.coerceIn(0, displayLength)
         return editorOffsetMapping.transformedToOriginal(coerced)
             .coerceIn(0, textFieldValue.text.length)
+    }
+
+    /**
+     * When list gutters are omitted from the display text, a field offset on a shared `\n` between
+     * items can sit on the wrong paragraph; use display space (via [editorOffsetMapping]) to snap
+     * the caret to the list item the user clicked or arrowed onto.
+     */
+    private fun normalizeSelectionForListLayout(selection: TextRange): TextRange {
+        if (!selection.collapsed || !editorSegmentsNeedOffsetMapping(editorSegments)) return selection
+        val fieldOffset = selection.start.coerceIn(0, textFieldValue.text.length)
+        val displayOffset = editorOffsetMapping.originalToTransformed(fieldOffset)
+        val resolved = resolveParagraphCaretFieldOffset(
+            rawOffset = fieldOffset,
+            segments = editorSegments,
+            textLength = textFieldValue.text.length,
+            displayOffset = displayOffset,
+        )
+        return TextRange(resolved)
     }
 
     /**
@@ -1088,7 +1108,8 @@ class TextKitState(
                 prevTextFieldValue.selection != textFieldValue.selection
             ) {
                 // Update selection
-                textFieldValue = prevTextFieldValue
+                val normalized = normalizeSelectionForListLayout(prevTextFieldValue.selection)
+                textFieldValue = prevTextFieldValue.copy(selection = normalized)
                 selection = textFieldValue.selection
                 // Atomicity: a collapsed caret may not rest inside an atomic token — snap it out.
                 val snapped = tokenState.snapCaretOutOfToken(selection)
