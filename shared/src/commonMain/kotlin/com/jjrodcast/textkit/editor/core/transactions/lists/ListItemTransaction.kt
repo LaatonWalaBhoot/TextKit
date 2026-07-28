@@ -2,6 +2,7 @@ package com.jjrodcast.textkit.editor.core.transactions.lists
 
 import androidx.compose.ui.text.TextRange
 import com.jjrodcast.textkit.editor.components.TextEditorDecoratorItem
+import com.jjrodcast.textkit.editor.components.TextEditorListItem
 import com.jjrodcast.textkit.editor.components.TextEditorListItem.BulletedList
 import com.jjrodcast.textkit.editor.components.TextEditorListItem.CheckList
 import com.jjrodcast.textkit.editor.components.TextEditorListItem.None
@@ -80,9 +81,19 @@ internal object ListItemTransaction {
         val currentItem = items.first()
         val transformedParagraphs = lines.paragraphs.map(::transformToTextEditorDecoratorLine)
         val currentIndex = transformedParagraphs.indexOf(currentItem)
-        val currentListItem = listItem.toFinalListItemType(prevListItem, currentItem.piece.decorator.toLevel(0))
+        // The caller's prevListItem reflects the observed caret state, which can be stale at list
+        // boundaries; the paragraph itself is the source of truth. Re-derive when the caller claims
+        // "not in a list" over an actual list item, so the toggle converts it instead of stacking a
+        // second decorator — the same re-derivation applyRangeChanges does for mixed selections.
+        // Restricted to real list kinds: a non-list decorator (blockquote) must not be promoted into
+        // the list-conversion paths.
+        val actualListItem = currentItem.piece.decorator.toTextEditorListItem()
+        val effectivePrevListItem =
+            if (prevListItem == None && actualListItem is TextEditorListItem && actualListItem != None) actualListItem
+            else prevListItem
+        val currentListItem = listItem.toFinalListItemType(effectivePrevListItem, currentItem.piece.decorator.toLevel(0))
 
-        return if (prevListItem == None) {
+        return if (effectivePrevListItem == None) {
             // Changing paragraph to list item
             updateParagraphToListItem(lines, currentIndex, currentListItem, range)
         } else if (currentListItem == None) {
@@ -90,7 +101,7 @@ internal object ListItemTransaction {
             updateListItemToParagraph(lines, currentIndex, range)
         } else {
             // change list item type or levels
-            updateNestedListItems(currentIndex, lines, prevListItem, currentListItem, range)
+            updateNestedListItems(currentIndex, lines, effectivePrevListItem, currentListItem, range)
         }
     }
 
