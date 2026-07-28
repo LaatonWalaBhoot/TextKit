@@ -93,6 +93,16 @@ internal class RichTextEditorPieceTable : RichTextEditorBasePieceTable() {
 
         if (initialAffectedPieceIndex == finalAffectedPieceIndex) {
             val piece = rope.get(initialAffectedPieceIndex)
+            if (length == piece.length && initialBufferOffset == piece.offset) {
+                // The piece is fully consumed: remove it rather than leaving a zero-length husk.
+                // A husk surviving at a line start hides a following decorator from paragraph-type
+                // detection, so the next list item exports as plain text (issue #72).
+                rope.splice(initialAffectedPieceIndex, initialAffectedPieceIndex + 1, emptyList())
+                ensureNotEmpty()
+                patchCache(offset, length, "")
+                // Structural change, same as the multi-piece path's full consumption.
+                return true
+            }
             if (initialBufferOffset == piece.offset) {
                 // Deleting from the start — the END of the piece is unchanged.
                 val newLength = piece.length - length
