@@ -19,13 +19,35 @@ internal object TextUpdateTransaction {
         manager: TextKitEditorManager
     ): Pair<TextRange, List<TextEditorListItemTransaction>> {
         val selectedParagraphs = lines.paragraphsInSelectedRange.filter { it.piecesInSelectedRange.isNotEmpty() }
-        return if (selectedParagraphs.size > 1) {
-            val firstParagraphInRange = selectedParagraphs.first()
-            val lastParagraphInRange = selectedParagraphs.last()
-            manager.transaction.updateOnMultipleParagraphs(firstParagraphInRange, lastParagraphInRange, lines, actionModel)
-        } else {
-            manager.transaction.updateOnSingleParagraph(selectedParagraphs.first(), actionModel)
+        return when {
+            // No piece in range — the window sits on an empty paragraph or at the document end
+            // (an IME composition delivering text there). Degrade to a plain replacement at the
+            // offset instead of crashing on the empty selection (issue #77).
+            selectedParagraphs.isEmpty() -> manager.transaction.updateOutsidePieces(actionModel)
+
+            selectedParagraphs.size > 1 -> {
+                val firstParagraphInRange = selectedParagraphs.first()
+                val lastParagraphInRange = selectedParagraphs.last()
+                manager.transaction.updateOnMultipleParagraphs(firstParagraphInRange, lastParagraphInRange, lines, actionModel)
+            }
+
+            else -> manager.transaction.updateOnSingleParagraph(selectedParagraphs.first(), actionModel)
         }
+    }
+
+    private fun TextEditorTransaction.updateOutsidePieces(
+        actionModel: TextEditorAction.TextUpdated
+    ): Pair<TextRange, List<TextEditorListItemTransaction>> {
+        // At the document end there is no piece at the offset itself; inherit the marks of the
+        // character before it so an IME composition finishing there continues the formatting.
+        val marks = when {
+            actionModel.offset < text.length -> marksAtOrEmpty(actionModel.offset)
+            actionModel.offset > 0 -> marksAtOrEmpty(actionModel.offset - 1)
+            else -> emptySet()
+        }
+        val model = TextEditorModel.create(text = actionModel.text, marks = marks, decorator = null)
+        val transaction = updateTransaction(actionModel.offset, model, actionModel.removeLength)
+        return Pair(TextRange(actionModel.offset + actionModel.text.length), listOf(transaction))
     }
 
     private fun TextEditorTransaction.updateOnMultipleParagraphs(
