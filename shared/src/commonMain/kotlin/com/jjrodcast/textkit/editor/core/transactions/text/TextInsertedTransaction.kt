@@ -31,6 +31,33 @@ internal object TextInsertedTransaction {
         lines: MultiPieceParagraph,
         actionModel: TextEditorAction.TextAdded
     ): Pair<TextRange, List<TextEditorListItemTransaction>> {
+        // The decorator is presentation-only and atomic, so an insert whose offset falls in a
+        // decorator region must not splice into it (issue #69; the replace path got the same rule
+        // in #58): text lands at the item's content start, a break splits at the item boundary, and
+        // a break exactly before the item opens a plain line above it, leaving the item untouched.
+        val decoratedParagraph = lines.listItemWithDecoratorAt(actionModel.offset)
+        if (decoratedParagraph != null) {
+            if (actionModel.text.isLineBreak() && actionModel.offset == decoratedParagraph.startOffset) {
+                return insertTextInParagraph(actionModel, getMarksForInsertion(actionModel.marks, filterLinkMarks = true))
+            }
+            val contentStart = decoratedParagraph.startOffset + decoratedParagraph.startPiece.length
+            if (actionModel.offset < contentStart) {
+                // A numbered item's established behaviour is to block text typed on its decorator
+                // (see preventTextInsertionOnDecorator); keep that, clamp everything else.
+                if (!actionModel.text.isLineBreak() &&
+                    decoratedParagraph.startPiece.decorator is TextDecoratorModel.NumberDecoratorModel
+                ) {
+                    return preventTextInsertionOnDecorator(decoratedParagraph)
+                }
+                // Re-dispatch with the selection rebuilt at the clamped offset too, so downstream
+                // piecesInSelectedRange routing sees the content position, not the decorator.
+                return addText(
+                    lines.atOffset(contentStart),
+                    actionModel.copy(offset = contentStart, selection = TextRange(contentStart + actionModel.text.length))
+                )
+            }
+        }
+
         val currentParagraph = lines.paragraphsInSelectedRange.firstOrNull()
         val isAtEndOfParagraph = currentParagraph?.isAtEndOfParagraph(actionModel.offset, actionModel.offset) ?: false
         val updatedSelectedParagraph = if (isAtEndOfParagraph) {
@@ -47,6 +74,23 @@ internal object TextInsertedTransaction {
             insertTextInParagraph(updatedSelectedParagraph, actionModel)
         }
     }
+
+    /** The list item whose decorator region contains [offset], or `null` when there is none. */
+    private fun MultiPieceParagraph.listItemWithDecoratorAt(offset: Int): PieceParagraph? =
+        paragraphs.firstOrNull { paragraph ->
+            paragraph.isListItem &&
+                offset >= paragraph.startOffset &&
+                offset < paragraph.startOffset + paragraph.startPiece.length
+        }
+
+    /** The same paragraphs with the collapsed selection moved to [offset], mirroring how the caller
+     *  builds line content for a collapsed insert. */
+    private fun MultiPieceParagraph.atOffset(offset: Int): MultiPieceParagraph =
+        MultiPieceParagraph(
+            paragraphs = paragraphs.map { it.copy(start = offset, end = offset) },
+            start = offset,
+            end = offset,
+        )
 
     private fun getMarks(preselectedMarks: Set<Mark>, previousItemMarks: Set<Mark>, isNewParagraph: Boolean): Set<Mark> {
         return if (isNewParagraph) {
