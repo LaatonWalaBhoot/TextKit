@@ -17,7 +17,7 @@ actual object TextDecoratorTransaction {
         actionModel: TextEditorAction.TextRemoved
     ): Pair<TextRange, List<TextEditorListItemTransaction>> {
         return when (paragraph.startPiece.decorator) {
-            is TextDecoratorModel.TaskDecoratorModel -> deleteTaskDecorator(paragraph, actionModel)
+            is TextDecoratorModel.TaskDecoratorModel -> deleteTaskDecorator(paragraph, lines, actionModel)
             else -> TextTransactionsUtils.getCommonDeleteDecoratorTransactions(paragraph, lines)
         }
     }
@@ -40,12 +40,14 @@ actual object TextDecoratorTransaction {
      * This function deletes a decorator.
      *
      * When we delete text within a decorator we need to validate if the remaining text matches a type of decorator.
-     * If it does, we replace it with the new decorator, otherwise we simply delete the decorator and insert the text from the previous decorator as text.
+     * If it does, we replace it with the new decorator; otherwise the decorator is removed whole via the
+     * common delete path (the item becomes a paragraph) — see issue #74.
      *
      * @return A Pair with the new cursor position and a list of transactions [TextEditorListItemTransaction].
      */
     private fun deleteTaskDecorator(
         paragraph: PieceParagraph,
+        lines: MultiPieceParagraph,
         actionModel: TextEditorAction.TextRemoved
     ): Pair<TextRange, List<TextEditorListItemTransaction>> {
         val decoratorOffset = paragraph.startOffset
@@ -65,13 +67,10 @@ actual object TextDecoratorTransaction {
 
             Pair(TextRange(actionModel.offset), listOf(transaction))
         } else {
-            val model = TextEditorModel.create(text = newText)
-            val transaction = TextTransactionsUtils.updateTransaction(
-                decoratorOffset,
-                model,
-                paragraph.startPiece.length
-            )
-            Pair(TextRange(actionModel.offset), listOf(transaction))
+            // The remnant is no longer a valid decorator: remove the decorator whole (item becomes
+            // a paragraph), matching the common path and the iOS actual — restoring the fragments
+            // as literal text persisted presentation garbage into the export (issue #74).
+            TextTransactionsUtils.getCommonDeleteDecoratorTransactions(paragraph, lines)
         }
     }
 }
