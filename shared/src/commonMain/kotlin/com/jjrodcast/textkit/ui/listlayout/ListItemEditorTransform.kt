@@ -97,15 +97,20 @@ private class ListItemOffsetMapping(
     }
 
     override fun transformedToOriginal(offset: Int): Int {
-        for (segment in segments) {
-            if (offset < segment.displayStart) break
-            if (offset <= segment.displayEnd) {
-                val local = offset - segment.displayStart
-                return if (segment.gutterLength == 0) {
-                    segment.fieldStart + local
-                } else {
-                    segment.fieldStart + segment.gutterLength + local
-                }
+        segments.forEachIndexed { index, segment ->
+            if (offset < segment.displayStart) return@forEachIndexed
+            val isLast = index == segments.lastIndex
+            // Display ranges are consecutive: [displayStart, displayEnd) for interior segments.
+            // Offset displayEnd is shared with the next segment's displayStart (caret after the
+            // paragraph-separator space); it must map to the following paragraph, not the previous
+            // one — otherwise consecutive empty list items collapse to the same field offset.
+            val inSegment = offset < segment.displayEnd || (isLast && offset <= segment.displayEnd)
+            if (!inSegment) return@forEachIndexed
+            val local = offset - segment.displayStart
+            return if (segment.gutterLength == 0) {
+                segment.fieldStart + local
+            } else {
+                segment.fieldStart + segment.gutterLength + local
             }
         }
         return segments.lastOrNull()?.fieldEnd ?: offset

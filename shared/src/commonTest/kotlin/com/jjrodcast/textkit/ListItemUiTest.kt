@@ -1,6 +1,8 @@
 package com.jjrodcast.textkit
 
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.TextFieldValue
+import com.jjrodcast.textkit.editor.utils.DocumentUtils
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextAlign as ComposeTextAlign
 import com.jjrodcast.textkit.editor.core.parser.TextAlign
@@ -24,6 +26,19 @@ class ListItemUiTest {
 
     private fun stateWith(json: String): TextKitState =
         TextKitState(json, createTextKitConfiguration()).apply { setup() }
+
+    /** Simulates the user typing [text] at [fieldOffset] (field coordinates), as BasicTextField would. */
+    private fun TextKitState.simulateTypingAt(fieldOffset: Int, text: String) {
+        val before = textFieldValue
+        val inserted = before.text.substring(0, fieldOffset) + text +
+            before.text.substring(fieldOffset)
+        onTextFieldChange(
+            TextFieldValue(
+                text = inserted,
+                selection = TextRange(fieldOffset + text.length),
+            )
+        )
+    }
 
     private fun centeredBulletListDoc() = """
         {"type":"doc","content":[
@@ -355,5 +370,62 @@ class ListItemUiTest {
         val fieldText = state.textFieldValue.text
         val transformed = state.visualTransformation.filter(AnnotatedString(fieldText))
         assertEquals(fieldText.length, transformed.text.length)
+    }
+
+    @Test
+    fun displayOffsetAfterEmptyListItemMapsToNextItemNotPrevious() {
+        val state = stateWith(SampleDocuments.ORDERED_LIST)
+        val endOfOne = state.textFieldValue.text.indexOf("one") + "one".length
+        repeat(3) {
+            state.simulateTypingAt(
+                state.textFieldValue.text.indexOf("one") + "one".length,
+                "\n",
+            )
+        }
+        val segs = state.editorSegments().filter { it.gutter != null }
+        assertTrue(segs.size >= 4, "expected original item plus three new empty items")
+        val thirdEmpty = segs[2]
+        val mapping = state.visualTransformation.filter(AnnotatedString(state.textFieldValue.text)).offsetMapping
+        val fieldAtThirdStart = mapping.transformedToOriginal(thirdEmpty.displayStart)
+        assertEquals(
+            thirdEmpty.fieldStart + thirdEmpty.gutterLength,
+            fieldAtThirdStart,
+            "caret at the start of the third list item's display line must target that item"
+        )
+    }
+
+    @Test
+    fun typingInEmptyListItemAfterFirstInsertsInThatItem() {
+        val state = stateWith(SampleDocuments.ORDERED_LIST)
+        val endOfOne = state.textFieldValue.text.indexOf("one") + "one".length
+        repeat(2) { state.simulateTypingAt(endOfOne, "\n") }
+        val segs = state.editorSegments().filter { it.gutter != null }
+        val secondItemContentStart = segs[1].fieldStart + segs[1].gutterLength
+        state.simulateTypingAt(secondItemContentStart, "X")
+        assertTrue(state.textFieldValue.text.contains("X"))
+        val text = state.textFieldValue.text
+        val marker2 = text.indexOf("2.")
+        val marker3 = text.indexOf("3.")
+        val xIndex = text.indexOf('X')
+        assertTrue(xIndex > marker2 && xIndex < marker3, "X must land in the second list item")
+    }
+
+    @Test
+    fun complexJsonV1_firstListItemEnterThenTypeInNewEmptyItem() {
+        val state = stateWith(DocumentUtils.complexJsonV1)
+        val text = state.textFieldValue.text
+        val firstItemEnd = text.indexOf("First item") + "First item".length
+        state.simulateTypingAt(firstItemEnd, "\n")
+        val segs = state.editorSegments().filter { it.gutter != null }
+        val newItem = segs[1]
+        val contentStart = newItem.fieldStart + newItem.gutterLength
+        state.simulateTypingAt(contentStart, "Z")
+        assertTrue(state.toJson().contains("Z"))
+        val updated = state.textFieldValue.text
+        val secondItemRegion = updated.indexOf("Second")
+        assertTrue(
+            updated.indexOf('Z') < secondItemRegion,
+            "Z must appear before the original second item text"
+        )
     }
 }
