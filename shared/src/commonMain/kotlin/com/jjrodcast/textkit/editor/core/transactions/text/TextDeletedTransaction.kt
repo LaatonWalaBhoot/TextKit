@@ -29,6 +29,15 @@ internal object TextDeletedTransaction {
         actionModel: TextEditorAction.TextRemoved,
         manager: TextKitEditorManager
     ): Pair<TextRange, List<TextEditorListItemTransaction>> {
+        val extended = extendPastOrphanedDecorator(lines, actionModel, manager)
+        if (extended != null) {
+            val newLines = manager.transaction.getLineContentWithNeighborParagraphs(
+                extended.offset,
+                extended.offset + extended.length
+            )
+            return deleteText(newLines, extended, manager)
+        }
+
         val selectedParagraphs = lines.paragraphsInSelectedRange.filter { it.piecesInSelectedRange.isNotEmpty() }
         return if (selectedParagraphs.size > 1) {
             val firstParagraphInRange = selectedParagraphs.first()
@@ -37,6 +46,32 @@ internal object TextDeletedTransaction {
         } else {
             manager.transaction.deleteOnSingleParagraph(selectedParagraphs.first(), lines, actionModel)
         }
+    }
+
+    /**
+     * A delete whose range consumes a paragraph's terminating line break and stops exactly at the
+     * next list item's decorator merges the two lines — and would leave that decorator orphaned
+     * mid-line in the text stream while the export drops it (issue #67). When the merged line keeps
+     * a head (the first paragraph's decorator survives by policy, or the delete starts mid-line),
+     * reach one character into the following decorator and re-dispatch, so the existing
+     * partially-selected-decorator handling swallows it whole and renumbers the remaining items.
+     * Returns `null` when no extension applies; the extended range ends inside the decorator, so
+     * the re-dispatch can never extend a second time.
+     */
+    private fun extendPastOrphanedDecorator(
+        lines: MultiPieceParagraph,
+        actionModel: TextEditorAction.TextRemoved,
+        manager: TextKitEditorManager
+    ): TextEditorAction.TextRemoved? {
+        val end = actionModel.offset + actionModel.length
+        if (end >= manager.text.length) return null
+        if (manager.text.getOrNull(end - 1)?.isLineBreak() != true) return null
+        val firstParagraph = lines.paragraphsInSelectedRange.firstOrNull { it.piecesInSelectedRange.isNotEmpty() }
+            ?: return null
+        val keepsLineHead = firstParagraph.isListItem || actionModel.offset > firstParagraph.startOffset
+        if (!keepsLineHead) return null
+        lines.paragraphs.firstOrNull { it.startOffset == end && it.isListItem } ?: return null
+        return actionModel.copy(length = actionModel.length + 1)
     }
 
     /**
