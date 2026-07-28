@@ -15,36 +15,9 @@ import kotlin.test.assertTrue
  */
 class PotentialBugsTest {
 
-    /**
-     * BUG: Re-serializing [DocumentUtils.complexJsonV3] is not idempotent.
-     *
-     * The first `load -> toJson` emits a trailing empty paragraph (`{"content":[],"type":"paragraph"}`)
-     * that the next `load -> toJson` drops, so `once != twice`. A round-trip should reach a fixed
-     * point after the first pass.
-     */
-    @Test
-    fun sample_v3_reserialization_is_not_idempotent() {
-        val once = editorFrom(DocumentUtils.complexJsonV3).toJson()
-        val twice = editorFrom(once).toJson()
-        assertTrue(
-            once != twice,
-            "if this fails, V3 serialization is now stable — move it into LargeDocumentTest.idempotentSamples"
-        )
-    }
-
-    /**
-     * BUG: Re-serializing [DocumentUtils.complexJsonV6] is not idempotent either (same trailing
-     * empty-paragraph symptom as V3).
-     */
-    @Test
-    fun sample_v6_reserialization_is_not_idempotent() {
-        val once = editorFrom(DocumentUtils.complexJsonV6).toJson()
-        val twice = editorFrom(once).toJson()
-        assertTrue(
-            once != twice,
-            "if this fails, V6 serialization is now stable — move it into LargeDocumentTest.idempotentSamples"
-        )
-    }
+    // The V3/V6 reserialization-idempotency characterizations moved to
+    // [LargeDocumentTest.toJson_is_idempotent_across_a_second_round_trip]: preserving trailing empty
+    // paragraphs (issue #61) made every sample's serialization stable.
 
     /**
      * BUG: Removing an existing link duplicates text / merges the linked piece with its neighbor.

@@ -30,7 +30,9 @@ internal data class PositionalParagraph(
     internal fun getParagraphContent(): List<BaseText> {
         return if (textStyled.any { it.text.isNotEmpty() }) {
             textStyled.mapNotNull {
-                if (it.text.isLineBreak()) null
+                // A zero-length piece (an edit remnant) must not become an empty text node — that
+                // is not a valid ProseMirror node and a reload would silently drop it (issue #61).
+                if (it.text.isLineBreak() || it.text.isEmpty()) null
                 else it.toInlineNode()
             }
         } else {

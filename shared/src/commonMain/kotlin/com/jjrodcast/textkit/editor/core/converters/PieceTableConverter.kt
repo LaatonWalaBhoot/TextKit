@@ -74,7 +74,7 @@ internal object PieceTableConverter {
      * @return A flat list of [TextEditorParagraphModel] representing each line of the document.
      */
     private fun convertPieceTableToParagraphs(pieceTable: RichTextEditor<TextEditorDocumentModel, TextEditorModel>): List<TextEditorParagraphModel> {
-        return createInternalParagraphs(pieceTable.annotatedText)
+        return createInternalParagraphs(pieceTable.annotatedText, preserveTrailingEmptyParagraph = true)
     }
 
     /**
@@ -83,7 +83,10 @@ internal object PieceTableConverter {
      * @param models The flat list of [TextEditorModel] elements representing all text pieces.
      * @return A list of [TextEditorParagraphModel] grouped by line break boundaries.
      */
-    private fun createInternalParagraphs(models: List<TextEditorModel>): List<TextEditorParagraphModel> {
+    private fun createInternalParagraphs(
+        models: List<TextEditorModel>,
+        preserveTrailingEmptyParagraph: Boolean = false,
+    ): List<TextEditorParagraphModel> {
         val paragraphs = arrayListOf<TextEditorParagraphModel>()
         val texts = arrayListOf<TextEditorModel>()
         models.fastForEach { model ->
@@ -94,13 +97,16 @@ internal object PieceTableConverter {
             }
         }
 
-        when (texts.count { it.text.isNotEmpty() }) {
-            0 -> texts.clear()
-            else -> {
+        when {
+            texts.any { it.text.isNotEmpty() } -> paragraphs.add(TextEditorParagraphModel(texts.toList()))
+            // A document-final line break opens one last, empty paragraph — preserved at the document
+            // level so a trailing blank line survives export (see issue #61). A document with no
+            // paragraphs at all stays empty (its canonical export is `{}`), and list-item content
+            // (the other caller) keeps dropping its terminal-break group.
+            preserveTrailingEmptyParagraph && paragraphs.isNotEmpty() ->
                 paragraphs.add(TextEditorParagraphModel(texts.toList()))
-                texts.clear()
-            }
         }
+        texts.clear()
         return paragraphs
     }
 
@@ -535,23 +541,14 @@ internal object PieceTableConverter {
         // 2. Return the list of paragraphs
         return internalParagraphs.fastMap { paragraph ->
             val textAlign = paragraph.styledText.resolveTextAlign()
+            // A zero-length piece (an edit remnant) must not become an empty text node — invalid
+            // ProseMirror, silently dropped on reload (issue #61).
             val texts = paragraph.styledText
-                .mapNotNull { if (it.isDecorator) null else it }
+                .mapNotNull { if (it.isDecorator || it.text.isEmpty()) null else it }
                 .fastMap { it.toInlineNode() }
 
-            when (texts.size) {
-                0 -> Paragraph(attrs = ParagraphAttrs(textAlign = textAlign))
-                1 -> {
-                    val first = texts.first()
-                    if (first is Text && first.text.isEmpty()) {
-                        Paragraph(attrs = ParagraphAttrs(textAlign = textAlign))
-                    } else {
-                        Paragraph(attrs = ParagraphAttrs(textAlign = textAlign), content = texts)
-                    }
-                }
-
-                else -> Paragraph(attrs = ParagraphAttrs(textAlign = textAlign), content = texts)
-            }
+            if (texts.isEmpty()) Paragraph(attrs = ParagraphAttrs(textAlign = textAlign))
+            else Paragraph(attrs = ParagraphAttrs(textAlign = textAlign), content = texts)
         }
     }
 

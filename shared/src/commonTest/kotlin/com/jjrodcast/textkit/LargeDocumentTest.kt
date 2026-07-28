@@ -26,15 +26,9 @@ class LargeDocumentTest {
         "V6" to DocumentUtils.complexJsonV6,
     )
 
-    // Subset whose serialization is stable. V3 and V6 are excluded — see
-    // [PotentialBugsTest.sample_v3_reserialization_is_not_idempotent] and
-    // [PotentialBugsTest.sample_v6_reserialization_is_not_idempotent].
-    private val idempotentSamples: List<Pair<String, String>> = listOf(
-        "V1" to DocumentUtils.complexJsonV1,
-        "V2" to DocumentUtils.complexJsonV2,
-        "V4" to DocumentUtils.complexJsonV4,
-        "V5" to DocumentUtils.complexJsonV5,
-    )
+    // Every sample's serialization is stable. V3 and V6 joined once the trailing-empty-paragraph
+    // preservation landed (issue #61) — their round-trip no longer loses a paragraph per pass.
+    private val idempotentSamples: List<Pair<String, String>> = samples
 
     @Test
     fun every_sample_loads_into_non_empty_text_and_paragraphs() {
