@@ -180,10 +180,20 @@ internal abstract class RichTextEditorBasePieceTable :
         return MultiPieceParagraph(paragraphs, start, end)
     }
 
+    /**
+     * Reseeds the table with a single zero-length piece when it has none. The rest of the table (and
+     * its readers — the line-content walks all `first()`/`last()` their result) assumes at least one
+     * piece, so an empty document is always represented by one empty piece, never by no pieces. The
+     * piece's [Source] is irrelevant at zero length.
+     */
+    protected fun ensureNotEmpty() {
+        if (rope.isEmpty()) rope.addSingle(createEmptyPiece(Source.ADDED))
+    }
+
     protected fun getPieceIndexAndOffset(offset: Int): Pair<Int, Int> {
         if (offset < 0) throw IndexOutOfBoundsException("Index out of bounds:getPieceIndexAndOffset: $offset")
 
-        if (rope.isEmpty()) rope.addSingle(createEmptyPiece(Source.ADDED))
+        ensureNotEmpty()
 
         // O(log P) walk-down through the rope tree: finds the leftmost piece
         // whose cumulative end length >= offset, without a pre-sorted array.

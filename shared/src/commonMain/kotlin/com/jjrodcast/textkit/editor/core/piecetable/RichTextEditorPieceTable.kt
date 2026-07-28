@@ -152,6 +152,9 @@ internal class RichTextEditorPieceTable : RichTextEditorBasePieceTable() {
         }
         // O(log P): splice replaces [initialAffectedPieceIndex, finalAffectedPieceIndex] with deletePieces
         rope.splice(initialAffectedPieceIndex, finalAffectedPieceIndex + 1, deletePieces)
+        // A delete spanning every piece can splice them all away; reseed so the table never goes
+        // empty — its readers assume at least one piece (see ensureNotEmpty).
+        ensureNotEmpty()
         patchCache(offset, length, "")
         return true
     }
