@@ -43,9 +43,11 @@ internal object TextUpdateTransaction {
         var length = actionModel.removeLength
 
         if (firstParagraphIncludesDecorator) {
-            val remainingDecoratorOffset = getOffsetAfterDecorator(firstParagraph, actionModel.offset)
+            // Same clamping as the single-paragraph path: the window start moves past the first
+            // item's decorator and the length loses the covered part, never inverting below zero.
+            val remainingDecoratorOffset = maxOf(getOffsetAfterDecorator(firstParagraph, actionModel.offset), 0)
             offset += remainingDecoratorOffset
-            length -= remainingDecoratorOffset
+            length = maxOf(length - remainingDecoratorOffset, 0)
         }
 
         if (isLastDecoratorPartiallySelected) {
@@ -54,7 +56,7 @@ internal object TextUpdateTransaction {
             length += remainingDecoratorOffset
         }
 
-        val marks = getTextAt(offset).piece.marks
+        val marks = marksAtOrEmpty(offset)
         val model = TextEditorModel.create(text = actionModel.text, marks = marks, decorator = null)
         val deleteTransaction = updateTransaction(offset, model, length)
         transactions.add(deleteTransaction)
@@ -65,6 +67,13 @@ internal object TextUpdateTransaction {
 
         return Pair(TextRange(offset + actionModel.text.length), transactions)
     }
+
+    /**
+     * Marks of the piece at [offset], or none when [offset] sits at the document end (a clamped
+     * window on an empty list item lands there — nothing to inherit marks from).
+     */
+    private fun TextEditorTransaction.marksAtOrEmpty(offset: Int) =
+        if (offset < text.length) getTextAt(offset).piece.marks else emptySet()
 
     private fun TextEditorTransaction.updateOnSingleParagraph(
         paragraph: PieceParagraph,
@@ -83,12 +92,16 @@ internal object TextUpdateTransaction {
         var length = actionModel.removeLength
 
         if (selectionIncludesDecorator) {
-            val remainingDecoratorOffset = getOffsetAfterDecorator(paragraph, actionModel.offset)
-            offset += maxOf(remainingDecoratorOffset, 0)
-            length -= maxOf(remainingDecoratorOffset, 0)
+            // The decorator is presentation-only and atomic, so the replace window is clamped to the
+            // item's content: the start moves past the decorator and the length loses the part that
+            // lay inside it — never below zero, or the window inverts (a window fully inside the
+            // decorator becomes a plain insert at the content start).
+            val remainingDecoratorOffset = maxOf(getOffsetAfterDecorator(paragraph, actionModel.offset), 0)
+            offset += remainingDecoratorOffset
+            length = maxOf(length - remainingDecoratorOffset, 0)
         }
 
-        val marks = this.getTextAt(offset).piece.marks
+        val marks = this.marksAtOrEmpty(offset)
         val model = TextEditorModel.create(text = actionModel.text, marks = marks, decorator = null)
         val updateTransaction = updateTransaction(offset, model, length)
 
