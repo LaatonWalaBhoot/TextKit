@@ -460,7 +460,14 @@ internal object PieceTableConverter {
                 }
 
                 TASK_LIST_KEY -> {
-                    finalList.add(TaskList())
+                    // The group's items belong in the node, same as the other kinds — this emitted
+                    // an empty TaskList, which is not a valid list node and a reload drops it,
+                    // breaking the export's fixed point (issue #79). Built via
+                    // createTaskListContent (not innerItems) because a task list only holds
+                    // taskItem nodes: the shared builder above emits listItem for items with
+                    // nested children, losing the checked attr.
+                    val taskListContent = createTaskListContent(value)
+                    if (taskListContent.isNotEmpty()) finalList.add(TaskList(content = taskListContent))
                 }
 
                 else -> Unit
@@ -486,7 +493,10 @@ internal object PieceTableConverter {
 
             if (positionalParagraphs.isNotEmpty()) {
                 val nestedElements = positionalParagraphs.map { positionalParagraph ->
-                    createParagraphModel(listOf(positionalParagraph), startIndex = 0, endIndex = 0)
+                    // endIndex is exclusive: (0, 0) sublists to nothing, so a nested list rebuilt
+                    // here came out empty — `{"content":[],"type":"taskList"}` in the export, which
+                    // a reload drops (issue #79). The single element needs (0, 1).
+                    createParagraphModel(listOf(positionalParagraph), startIndex = 0, endIndex = 1)
                 }
                 TaskListItem(
                     attrs = TaskListAttrs(attributes?.checked ?: false),
