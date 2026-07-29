@@ -462,8 +462,12 @@ internal object PieceTableConverter {
                 TASK_LIST_KEY -> {
                     // The group's items belong in the node, same as the other kinds — this emitted
                     // an empty TaskList, which is not a valid list node and a reload drops it,
-                    // breaking the export's fixed point (issue #79).
-                    if (innerItems.isNotEmpty()) finalList.add(TaskList(content = innerItems))
+                    // breaking the export's fixed point (issue #79). Built via
+                    // createTaskListContent (not innerItems) because a task list only holds
+                    // taskItem nodes: the shared builder above emits listItem for items with
+                    // nested children, losing the checked attr.
+                    val taskListContent = createTaskListContent(value)
+                    if (taskListContent.isNotEmpty()) finalList.add(TaskList(content = taskListContent))
                 }
 
                 else -> Unit

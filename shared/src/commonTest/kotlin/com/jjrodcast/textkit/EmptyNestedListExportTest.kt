@@ -5,6 +5,7 @@ import com.jjrodcast.textkit.editor.components.TextEditorListItem
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * The export never emits a list node with zero items — a list must hold at least one item, and a
@@ -43,5 +44,40 @@ class EmptyNestedListExportTest {
         val once = editorFrom(NESTED).toJson()
         assertFalse(emptyListNode.containsMatchIn(once), once)
         assertEquals(once, editorFrom(once).toJson())
+    }
+
+    /**
+     * A task group rebuilt as a nested sibling (mixed nested lists under one item) must emit
+     * `taskItem` children — not `listItem` — so the checked state survives and a reload keeps the
+     * branch. The item's own nested list makes the shared list-item builder the wrong shape here.
+     */
+    private val MIXED_NESTED_SIBLINGS = """{"type":"doc","content":[
+      {"type":"bulletList","content":[
+        {"type":"listItem","content":[
+          {"type":"paragraph","content":[{"type":"text","text":"a"}]},
+          {"type":"bulletList","content":[
+            {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}
+          ]},
+          {"type":"taskList","content":[
+            {"type":"taskItem","attrs":{"checked":true},"content":[
+              {"type":"paragraph","content":[{"type":"text","text":"b"}]},
+              {"type":"bulletList","content":[
+                {"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"c"}]}]}
+              ]}
+            ]}
+          ]}
+        ]}
+      ]}
+    ]}"""
+
+    @Test
+    fun a_nested_task_group_keeps_taskItem_shape_and_checked_state() {
+        val once = editorFrom(MIXED_NESTED_SIBLINGS).toJson()
+
+        assertTrue(once.contains("\"checked\":true"), "checked state lost: $once")
+
+        val reloaded = editorFrom(once)
+        assertTrue(reloaded.text.contains("b") && reloaded.text.contains("c"), "reload dropped the task branch")
+        assertEquals(once, reloaded.toJson(), "export is not a fixed point")
     }
 }
