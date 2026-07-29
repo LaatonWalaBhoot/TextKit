@@ -492,7 +492,12 @@ internal object PieceTableConverter {
             val attributes = item.textStyled.firstOrNull()?.piece?.decorator as? TaskDecoratorModel
 
             if (positionalParagraphs.isNotEmpty()) {
-                val nestedElements = positionalParagraphs.map { positionalParagraph ->
+                // A task item's nested lists sit exactly one level below the item — that is the
+                // only shape a load can represent (nested lists inside a taskItem re-enter at the
+                // item's own level, unlike listItem chains which preserve relative depth). Deeper
+                // levels reached through live edits are flattened to document-ordered siblings so
+                // the export stays a fixed point.
+                val nestedElements = positionalParagraphs.flatMap { it.flattenSubtree() }.map { positionalParagraph ->
                     // endIndex is exclusive: (0, 0) sublists to nothing, so a nested list rebuilt
                     // here came out empty — `{"content":[],"type":"taskList"}` in the export, which
                     // a reload drops (issue #79). The single element needs (0, 1).
@@ -544,6 +549,10 @@ internal object PieceTableConverter {
         return result
     }
 
+    /** The node followed by all its descendants in document order, each with its children detached. */
+    private fun PositionalParagraph.flattenSubtree(): List<PositionalParagraph> =
+        listOf(copy(positionalParagraphs = arrayListOf())) + positionalParagraphs.flatMap { it.flattenSubtree() }
+
     private fun getParagraphContent(textStyled: List<TextEditorModel>): List<BaseParagraph> {
         // 1. Create internal Paragraph
         val internalParagraphs = createInternalParagraphs(textStyled)
@@ -552,9 +561,12 @@ internal object PieceTableConverter {
         return internalParagraphs.fastMap { paragraph ->
             val textAlign = paragraph.styledText.resolveTextAlign()
             // A zero-length piece (an edit remnant) must not become an empty text node — invalid
-            // ProseMirror, silently dropped on reload (issue #61).
+            // ProseMirror, silently dropped on reload (issue #61). A lone line-break piece is the
+            // same case one step removed: toInlineNode strips the break and leaves "" (a loaded
+            // empty item carries its break as a separate piece; a live-edited one keeps it on the
+            // decorator piece, which is why only reloads leaked the node).
             val texts = paragraph.styledText
-                .mapNotNull { if (it.isDecorator || it.text.isEmpty()) null else it }
+                .mapNotNull { if (it.isDecorator || it.text.isEmpty() || it.text.isLineBreak()) null else it }
                 .fastMap { it.toInlineNode() }
 
             if (texts.isEmpty()) Paragraph(attrs = ParagraphAttrs(textAlign = textAlign))
