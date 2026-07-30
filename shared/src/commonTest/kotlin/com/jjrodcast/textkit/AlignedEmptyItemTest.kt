@@ -5,7 +5,6 @@ import com.jjrodcast.textkit.editor.components.TextEditorListItem
 import com.jjrodcast.textkit.editor.core.parser.TextAlign
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * Alignment on an empty list item survives the load/export round trip. An empty item has no text
@@ -41,7 +40,8 @@ class AlignedEmptyItemTest {
         editor.deleteText(xAt, 1)
 
         val once = editor.toJson()
-        assertTrue(once.contains("\"textAlign\":\"right\""), once)
+        // Both items — the emptied one and the "y" item — keep their alignment.
+        assertEquals(2, once.split("\"textAlign\":\"right\"").size - 1, "alignment dropped: $once")
         assertEquals(once, editorFrom(once).toJson(), "export is not a fixed point")
     }
 
