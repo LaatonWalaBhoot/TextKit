@@ -131,7 +131,11 @@ internal object TextTransactionsUtils {
         val previousItemLevel = lines.paragraphs.getOrNull(selectedIndex - 1)?.startPiece?.decorator?.level ?: 1
         val currentDecoratorLevel = paragraph.startPiece.decorator?.level ?: 1
 
-        val needToDeletePreviousLineBreak = previousItemType == paragraph.paragraphType || currentDecoratorLevel > previousItemLevel
+        // A nested item can be the document's first paragraph (its level beats the defaulted
+        // previous level of 1) — there is no previous line break to delete then, and subtracting
+        // one would produce a negative offset.
+        val needToDeletePreviousLineBreak = paragraph.startOffset >= previousLineBreakLength &&
+            (previousItemType == paragraph.paragraphType || currentDecoratorLevel > previousItemLevel)
         val offset =
             if (needToDeletePreviousLineBreak) paragraph.startOffset - previousLineBreakLength else paragraph.startOffset
         val deleteLength = if (needToDeletePreviousLineBreak) decoratorPiece.length + previousLineBreakLength else decoratorPiece.length
