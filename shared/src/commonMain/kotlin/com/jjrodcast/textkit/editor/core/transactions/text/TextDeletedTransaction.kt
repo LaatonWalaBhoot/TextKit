@@ -94,8 +94,14 @@ internal object TextDeletedTransaction {
         actionModel: TextEditorAction.TextRemoved
     ): Pair<TextRange, List<TextEditorListItemTransaction>> {
         val firstParagraphIncludesDecorator = firstParagraph.piecesInSelectedRange.first().piece.isDecorator
-        val isLastDecoratorPartiallySelected =
-            getOffsetAfterDecorator(lastParagraph, lastParagraph.piecesInSelectedRange.last().piece.offset) > 0
+        // Document coordinates: the window's end lies strictly inside the last item's decorator
+        // span. The previous form passed the piece's *buffer* offset into document-offset math, so
+        // once a decorator lived deep in the ADDED buffer the predicate went false and the partial
+        // decorator survived the delete as a mid-line fragment.
+        val windowEnd = actionModel.offset + actionModel.length
+        val isLastDecoratorPartiallySelected = lastParagraph.isListItem &&
+            windowEnd > lastParagraph.startOffset &&
+            getOffsetAfterDecorator(lastParagraph, windowEnd) > 0
         val transactions = mutableListOf<TextEditorListItemTransaction>()
 
         var offset = actionModel.offset

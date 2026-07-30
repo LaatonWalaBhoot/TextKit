@@ -11,6 +11,8 @@ import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorAction
 import com.jjrodcast.textkit.editor.core.transactions.text.TextTransactionsUtils.getOffsetAfterDecorator
 import com.jjrodcast.textkit.editor.core.transactions.text.TextTransactionsUtils.reorderListItemsOnUpdate
 import com.jjrodcast.textkit.editor.core.transactions.text.TextTransactionsUtils.updateTransaction
+import com.jjrodcast.textkit.editor.utils.endsWithLineBreak
+import com.jjrodcast.textkit.editor.utils.isLineBreak
 
 internal object TextUpdateTransaction {
     internal fun updateText(
@@ -18,6 +20,15 @@ internal object TextUpdateTransaction {
         actionModel: TextEditorAction.TextUpdated,
         manager: TextKitEditorManager
     ): Pair<TextRange, List<TextEditorListItemTransaction>> {
+        val extended = extendPastOrphanedDecorator(lines, actionModel, manager)
+        if (extended != null) {
+            val newLines = manager.transaction.getLineContentWithNeighborParagraphs(
+                extended.offset,
+                extended.offset + extended.removeLength
+            )
+            return updateText(newLines, extended, manager)
+        }
+
         val selectedParagraphs = lines.paragraphsInSelectedRange.filter { it.piecesInSelectedRange.isNotEmpty() }
         return when {
             // No piece in range — the window sits on an empty paragraph or at the document end
@@ -33,6 +44,35 @@ internal object TextUpdateTransaction {
 
             else -> manager.transaction.updateOnSingleParagraph(selectedParagraphs.first(), actionModel)
         }
+    }
+
+    /**
+     * A replace whose removal window consumes a paragraph's terminating line break and stops
+     * exactly at the next list item's start merges the two lines — and, unless the replacement
+     * text restores the break, leaves that item's decorator orphaned mid-line in the text stream
+     * (the delete path got the same rule for issue #67). Reach one character into the following
+     * decorator and re-dispatch, so the existing partially-selected-decorator handling swallows it
+     * whole and renumbers the remaining items. Returns `null` when no extension applies; the
+     * extended range ends inside the decorator, so the re-dispatch can never extend a second time.
+     */
+    private fun extendPastOrphanedDecorator(
+        lines: MultiPieceParagraph,
+        actionModel: TextEditorAction.TextUpdated,
+        manager: TextKitEditorManager
+    ): TextEditorAction.TextUpdated? {
+        val end = actionModel.offset + actionModel.removeLength
+        if (end >= manager.text.length) return null
+        if (manager.text.getOrNull(end - 1)?.isLineBreak() != true) return null
+        if (actionModel.text.endsWithLineBreak()) return null
+        val firstParagraph = lines.paragraphsInSelectedRange.firstOrNull { it.piecesInSelectedRange.isNotEmpty() }
+            ?: return null
+        // Unlike a plain delete, any non-empty replacement itself becomes a head for the merged
+        // line, so the following decorator is orphaned even when the whole first line is removed.
+        val keepsLineHead = actionModel.text.isNotEmpty() ||
+            firstParagraph.isListItem || actionModel.offset > firstParagraph.startOffset
+        if (!keepsLineHead) return null
+        lines.paragraphs.firstOrNull { it.startOffset == end && it.isListItem } ?: return null
+        return actionModel.copy(removeLength = actionModel.removeLength + 1)
     }
 
     private fun TextEditorTransaction.updateOutsidePieces(
@@ -57,8 +97,13 @@ internal object TextUpdateTransaction {
         actionModel: TextEditorAction.TextUpdated
     ): Pair<TextRange, List<TextEditorListItemTransaction>> {
         val firstParagraphIncludesDecorator = firstParagraph.piecesInSelectedRange.first().piece.isDecorator
-        val isLastDecoratorPartiallySelected =
-            getOffsetAfterDecorator(lastParagraph, lastParagraph.piecesInSelectedRange.last().piece.offset) > 0
+        // Document coordinates: the window's end lies strictly inside the last item's decorator
+        // span (see the same predicate in TextDeletedTransaction — the previous buffer-offset form
+        // went false for decorators deep in the ADDED buffer, leaving mid-line fragments).
+        val windowEnd = actionModel.offset + actionModel.removeLength
+        val isLastDecoratorPartiallySelected = lastParagraph.isListItem &&
+            windowEnd > lastParagraph.startOffset &&
+            getOffsetAfterDecorator(lastParagraph, windowEnd) > 0
         val transactions = mutableListOf<TextEditorListItemTransaction>()
 
         var offset = actionModel.offset
