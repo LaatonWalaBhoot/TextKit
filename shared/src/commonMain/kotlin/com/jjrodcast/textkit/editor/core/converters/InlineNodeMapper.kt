@@ -7,6 +7,7 @@ import com.jjrodcast.textkit.editor.core.parser.HashtagType
 import com.jjrodcast.textkit.editor.core.parser.Mention
 import com.jjrodcast.textkit.editor.core.parser.MentionType
 import com.jjrodcast.textkit.editor.core.parser.Text
+import com.jjrodcast.textkit.editor.core.parser.TextStyleMark
 import com.jjrodcast.textkit.editor.core.piecetable.models.RichToken
 import com.jjrodcast.textkit.editor.utils.removeLineBreakSuffix
 
@@ -20,8 +21,18 @@ import com.jjrodcast.textkit.editor.utils.removeLineBreakSuffix
  */
 internal fun TextEditorModel.toInlineNode(): BaseText {
     val token = piece.token
-    return token?.toInlineNode(piece.marks.toSet())
-        ?: Text(text = text.removeLineBreakSuffix(), marks = piece.marks.toSet())
+    return token?.toInlineNode(piece.marks.inCanonicalOrder())
+        ?: Text(text = text.removeLineBreakSuffix(), marks = piece.marks.inCanonicalOrder())
+}
+
+/**
+ * Serializes marks in the order a load produces them: `recreateMarks` rebuilds every set as
+ * "other marks, then textStyle", while live formatting appends whichever mark was toggled most
+ * recently — so a set that carries textStyle mid-way would change order across a reload.
+ */
+private fun Set<com.jjrodcast.textkit.editor.core.parser.Mark>.inCanonicalOrder(): Set<com.jjrodcast.textkit.editor.core.parser.Mark> {
+    val (styleMarks, otherMarks) = partition { it is TextStyleMark }
+    return (otherMarks + styleMarks).toSet()
 }
 
 /** Rebuilds the concrete inline node for [RichToken.type]; unknown types fall back to a [Mention]. */
