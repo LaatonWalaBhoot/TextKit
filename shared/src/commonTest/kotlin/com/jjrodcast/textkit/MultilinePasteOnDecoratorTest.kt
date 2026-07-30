@@ -2,6 +2,7 @@ package com.jjrodcast.textkit
 
 import androidx.compose.ui.text.TextRange
 import com.jjrodcast.textkit.editor.components.TextEditorListItem
+import com.jjrodcast.textkit.editor.utils.TABS
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -35,7 +36,7 @@ class MultilinePasteOnDecoratorTest {
 
         editor.typeText(1, "x\ny")
 
-        assertEquals("\t\t1. \n\t\t2. yabc", editor.text)
+        assertEquals("${TABS}1. \n${TABS}2. yabc", editor.text)
         val once = editor.toJson()
         assertEquals(once, editorFrom(once).toJson(), "export is not a fixed point")
     }
@@ -47,7 +48,7 @@ class MultilinePasteOnDecoratorTest {
 
         editor.typeText(0, "x\ny")
 
-        assertEquals("\t\t• x\n\t\t• y", editor.text)
+        assertEquals("${TABS}• x\n${TABS}• y", editor.text)
         val once = editor.toJson()
         assertEquals(once, editorFrom(once).toJson(), "export is not a fixed point")
     }
@@ -60,7 +61,8 @@ class MultilinePasteOnDecoratorTest {
 
         val caret = editor.typeText(2, "z")
 
-        assertEquals("\t\t1. abc", editor.text)
-        assertEquals(TextRange(5), caret)
+        assertEquals("${TABS}1. abc", editor.text)
+        // The content start: right after the decorator, whose tab prefix is platform-specific.
+        assertEquals(TextRange(editor.text.indexOf("abc")), caret)
     }
 }
