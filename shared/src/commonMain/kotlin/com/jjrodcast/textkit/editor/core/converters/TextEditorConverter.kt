@@ -143,11 +143,15 @@ internal object TextEditorConverter {
                         )
                     }
                 }
-                items.applyTextAlign(attrs.textAlign)
                 when (decorator) {
                     is TextDecoratorModel.BlockquoteDecorator -> items.postProcessBlockquotes()
                     else -> items.postProcessParagraph(decorator)
                 }
+                // After post-processing, so the prepended decorator piece is stamped too: an empty
+                // list item has no text piece, and its line-break piece is dropped when the
+                // paragraph converts back — the decorator is then the only piece left to carry the
+                // alignment across a reload.
+                items.applyTextAlign(attrs.textAlign)
             }
 
             is Heading -> {
@@ -163,8 +167,9 @@ internal object TextEditorConverter {
                         )
                     }
                 }
-                items.applyTextAlign(attrs.textAlign)
                 items.postProcessParagraph(decorator)
+                // Same ordering as the Paragraph branch: stamp after the decorator is prepended.
+                items.applyTextAlign(attrs.textAlign)
             }
 
             is OrderedList -> {
