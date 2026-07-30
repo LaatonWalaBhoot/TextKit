@@ -51,8 +51,9 @@ class RangeToggleOverNestedItemTest {
 
         editor.assertNoMidlineDecorator()
         assertTrue(editor.text.contains("c"), editor.text)
-        // The break between the converted empty line and the following item survives.
-        assertEquals(4, editor.text.count { it == '\n' }, editor.text.replace("\n", "\\n").replace("\t", "\\t"))
+        // The break between the converted empty line and the following item survives: three lines
+        // were separated by three breaks before the toggle and still are after it.
+        assertEquals(3, editor.text.count { it == '\n' }, editor.text.replace("\n", "\\n").replace("\t", "\\t"))
         val once = editor.toJson()
         assertEquals(once, editorFrom(once).toJson(), "export is not a fixed point")
     }
