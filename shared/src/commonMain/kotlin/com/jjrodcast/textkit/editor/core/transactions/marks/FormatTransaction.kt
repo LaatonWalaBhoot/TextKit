@@ -137,9 +137,13 @@ internal object FormatTransaction {
                 // computes a negative delta and corrupts the piece boundaries (e.g. removing a link
                 // in its own paragraph would splice it into the previous paragraph's text).
                 val canMerge = hasSameMarks && !sideItem.isLastOnParagraph
-                val offset = if (sideItem.piece.isDecorator) range.min else sideItem.pieceStart
                 if (canMerge) {
-                    transaction.updateMarks(sideItem, rootItem, null, offset, range.length, marks)
+                    // The merge path never reads the offset; it only matters when the piece table
+                    // rejects the merge (the neighbors are not buffer-adjacent) and falls back to
+                    // marking the range inside the root piece. Passing the left neighbor's start
+                    // there computes a negative delta against the root's document offset and splices
+                    // in a piece with a negative buffer offset.
+                    transaction.updateMarks(sideItem, rootItem, null, range.min, range.length, marks)
                 } else {
                     transaction.updateMarks(null, rootItem, null, range.min, range.length, marks)
                 }
