@@ -370,9 +370,6 @@ internal object ListItemTransaction {
             }
         }
 
-        // Paragraph positions within nextElements that will receive a new decorator (for transaction tracking).
-        val selectedParagraphIndices = nextElements.mapIndexedNotNull { idx, item -> if (item.richPiece.decorator == null) idx else null }
-
         // Mutate newRichPiece in-place for prevElements that need a type change.
         prevElements.forEach { item ->
             if (item.richPiece.decorator.toTextEditorListItem() != listItem) {
@@ -403,7 +400,12 @@ internal object ListItemTransaction {
         val newPositionalListItems = ListsConverter.fromPositionalListItems(startItems + prevElements + itemsWithChangedLevels)
         val flattenItems = PositionalListItemUtils.reorderItems(items = newPositionalListItems)
 
-        val selectedParagraphs = selectedParagraphIndices.map { flattenItems[startItems.size + prevElements.size + it] }
+        // Recover the newly decorated paragraphs by their document index — the flat list's layout
+        // is not positionally stable after reorderItems restructures the tree (a selection ending
+        // inside a following item's decorator shifted the layout, handing that item an Insert and
+        // stacking a second decorator onto it).
+        val insertIndices = nextElements.mapNotNull { if (it.richPiece.decorator == null) it.index else null }.toSet()
+        val selectedParagraphs = flattenItems.filter { it.index in insertIndices }
         val transactions = flattenItems.createTransactions(selectedParagraphs)
         val newRange = ListItemTextEditorRangeUtils.getTextEditorRangeForMultiRange(flattenItems, selectedIndices, range)
         return Pair(transactions, newRange)
