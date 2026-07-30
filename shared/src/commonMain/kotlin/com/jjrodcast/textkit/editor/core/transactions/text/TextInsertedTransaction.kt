@@ -265,7 +265,10 @@ internal object TextInsertedTransaction {
     }
 
     private fun preventTextInsertionOnDecorator(paragraph: PieceParagraph): Pair<TextRange, List<TextEditorListItemTransaction>> {
-        val offset = paragraph.startOffset + paragraph.startPiece.length + 1
+        // The caret lands at the item's content start — not one past it. On an empty item that
+        // overshoots the document, and a multiline insert replays its next segment at the returned
+        // caret, so an out-of-range caret becomes an out-of-range insert.
+        val offset = paragraph.startOffset + paragraph.startPiece.length
         return Pair(TextRange(offset), emptyList())
     }
 
