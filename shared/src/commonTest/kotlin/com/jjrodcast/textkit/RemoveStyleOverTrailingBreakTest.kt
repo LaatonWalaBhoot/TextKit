@@ -1,6 +1,7 @@
 package com.jjrodcast.textkit
 
 import androidx.compose.ui.text.TextRange
+import com.jjrodcast.textkit.editor.components.TextEditorListItem
 import com.jjrodcast.textkit.editor.components.TextEditorStyleItem
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -41,6 +42,26 @@ class RemoveStyleOverTrailingBreakTest {
         editor.removeStyle(range, editor.marksAt(range), TextEditorStyleItem.Italic)
 
         assertEquals("abc\n", editor.text)
+        val once = editor.toJson()
+        assertEquals(once, editorFrom(once).toJson(), "export is not a fixed point")
+    }
+
+    @Test
+    fun toggling_a_style_beside_a_decorator_leaves_the_decorator_untouched() {
+        // The left neighbor of the formatted range is the decorator piece itself: it must stay
+        // atomic and unmarked while the first content character gains and loses the style.
+        val editor = editorFrom("{}")
+        editor.typeText(0, "ab")
+        editor.toListItem(TextRange(0, 2), TextEditorListItem.None, TextEditorListItem.BulletedList)
+        val a = editor.text.indexOf('a')
+
+        editor.applyStyle(TextRange(a, a + 1), TextEditorStyleItem.Bold)
+        assertEquals(setOf("bold"), editor.marksAt(TextRange(a, a + 1)).map { it.type }.toSet())
+        assertEquals(emptySet(), editor.marksAt(TextRange(a + 1, a + 2)).map { it.type }.toSet())
+
+        editor.removeStyle(TextRange(a, a + 1), editor.marksAt(TextRange(a, a + 1)), TextEditorStyleItem.Bold)
+
+        assertEquals(emptySet(), editor.marksAt(TextRange(a, a + 1)).map { it.type }.toSet())
         val once = editor.toJson()
         assertEquals(once, editorFrom(once).toJson(), "export is not a fixed point")
     }
