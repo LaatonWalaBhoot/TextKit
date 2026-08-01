@@ -33,13 +33,30 @@ import kotlin.test.assertTrue
  */
 class EditingStressTest {
 
+    /**
+     * A small cross-platform run. The full sweep lives in `EditingStressSweepTest` (JVM only): it
+     * blocks the event loop far too long for the browser test runner, whose watchdog kills a tab
+     * that cannot answer a ping for two seconds.
+     */
     @Test
     fun random_edit_sequences_keep_the_document_consistent() {
-        for (seed in SEEDS) {
-            val startDoc = START_DOCS[seed % START_DOCS.size]
-            val editor = editorFrom(startDoc)
+        EditingStress.run(SMOKE_SEEDS, SMOKE_OPS_PER_SEED)
+    }
+
+    private companion object {
+        val SMOKE_SEEDS = 0 until 12
+        const val SMOKE_OPS_PER_SEED = 50
+    }
+}
+
+/** The stress machinery, shared by the cross-platform smoke run and the JVM-only full sweep. */
+internal object EditingStress {
+
+    fun run(seeds: IntRange, opsPerSeed: Int) {
+        for (seed in seeds) {
+            val editor = editorFrom(START_DOCS[seed % START_DOCS.size])
             val rng = Random(seed)
-            for (step in 0 until OPS_PER_SEED) {
+            for (step in 0 until opsPerSeed) {
                 val (desc, action) = decideOp(editor, rng)
                 val where = "seed=$seed step=$step doc=${seed % START_DOCS.size} op '$desc'"
                 try {
@@ -170,18 +187,15 @@ class EditingStressTest {
         return TextRange(a, b)
     }
 
-    private companion object {
-        val SEEDS = 0 until 400
-        const val OPS_PER_SEED = 250
-        const val ALPHABET = "abc de"
+    private const val ALPHABET = "abc de"
 
-        val LIST_TYPES = listOf(
+    private val LIST_TYPES = listOf(
             TextEditorListItem.NumberedList,
             TextEditorListItem.BulletedList,
             TextEditorListItem.CheckList,
         )
 
-        val STYLES = listOf(
+    private val STYLES = listOf(
             TextEditorStyleItem.Bold,
             TextEditorStyleItem.Italic,
             TextEditorStyleItem.Underline,
@@ -189,12 +203,12 @@ class EditingStressTest {
             TextEditorStyleItem.Highlight,
         )
 
-        val ALIGNS = listOf(TextAlign.Left, TextAlign.Center, TextAlign.Right)
+    private val ALIGNS = listOf(TextAlign.Left, TextAlign.Center, TextAlign.Right)
 
-        val LIST_TYPES_IN_JSON = listOf("taskList", "bulletList", "orderedList")
+    private val LIST_TYPES_IN_JSON = listOf("taskList", "bulletList", "orderedList")
 
-        /** Each seed starts from one of these, so the ops churn empty, flat and nested documents. */
-        val START_DOCS = listOf(
+    /** Each seed starts from one of these, so the ops churn empty, flat and nested documents. */
+    private val START_DOCS = listOf(
             "{}",
             // Flat lists of every kind, alongside a plain paragraph.
             """{"type":"doc","content":[
@@ -227,5 +241,4 @@ class EditingStressTest {
               ]}
             ]}""",
         )
-    }
 }
