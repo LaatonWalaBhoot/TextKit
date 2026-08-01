@@ -202,6 +202,22 @@ class TextKitEditorManager(val configuration: TextKitConfiguration = createTextK
     fun onDecoratorChange(offset: Int) = transaction.onDecoratorChange(offset)
 
     /**
+     * Moves [offset] to the start of its list item's content when it falls inside the item's
+     * decorator. A decorator is presentation-only and atomic, so anything inserted there would split
+     * it — leaving the marker stranded mid-line and the paragraph carrying two decorator pieces. The
+     * typing, replace and paste paths clamp the same way (#58, #69, #89); the token and embed entry
+     * points reach the piece table directly, so they clamp here.
+     */
+    private fun contentStartFor(offset: Int): Int {
+        val item = transaction.getLineContent(offset, offset).paragraphs.firstOrNull { paragraph ->
+            paragraph.isListItem &&
+                offset >= paragraph.startOffset &&
+                offset < paragraph.startOffset + paragraph.startPiece.length
+        } ?: return offset
+        return item.startOffset + item.startPiece.length
+    }
+
+    /**
      * Inserts a trigger token, replacing [replaceRange] (typically the `<char>query` text the user
      * was typing).
      *
@@ -238,8 +254,8 @@ class TextKitEditorManager(val configuration: TextKitConfiguration = createTextK
                 )
             }
         )
-        val start = replaceRange.min
-        val length = replaceRange.length
+        val start = contentStartFor(replaceRange.min)
+        val length = maxOf(replaceRange.max, start) - start
         if (length > 0) transaction.update(start, length, model) else transaction.insert(
             model,
             start
@@ -290,8 +306,9 @@ class TextKitEditorManager(val configuration: TextKitConfiguration = createTextK
      * stays isolated (left text · embed · right text). Returns the placeholder's range.
      */
     fun insertEmbed(embedType: String, rawJson: String, label: String, at: TextRange): TextRange {
-        val start = at.min
-        if (at.length > 0) transaction.delete(start, at.length)
+        val start = contentStartFor(at.min)
+        val end = maxOf(at.max, start)
+        if (end > start) transaction.delete(start, end - start)
         val fullText = text
         var pos = start
         // Close the current paragraph on the left when the caret sits mid-line.
