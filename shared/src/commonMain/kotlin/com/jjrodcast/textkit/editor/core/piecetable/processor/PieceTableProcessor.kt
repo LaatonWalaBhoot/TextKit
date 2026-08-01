@@ -281,10 +281,14 @@ internal object PieceTableProcessor {
                         marks
                     )
                 } else if (leftModel.isLastOnParagraph) {
+                    // Re-mark the whole central piece. getCentralPieceTransaction measures the range
+                    // against the piece's DOCUMENT offset, so the buffer offset must not be passed
+                    // here: their difference becomes the split delta and rebuilds the piece over a
+                    // span of the buffer that is not its own.
                     getCentralPieceTransaction(
                         centralModel,
                         indexOfCentralPiece,
-                        centralPiece.offset,
+                        centralModel.offsetInDocument,
                         centralPiece.length,
                         marks
                     )
@@ -314,10 +318,11 @@ internal object PieceTableProcessor {
                         marks
                     )
                 } else if (centralModel.isLastOnParagraph) {
+                    // Document offset, not the buffer one — see the note above.
                     getCentralPieceTransaction(
                         centralModel,
                         indexOfCentralPiece,
-                        centralPiece.offset,
+                        centralModel.offsetInDocument,
                         centralPiece.length,
                         marks
                     )
@@ -399,26 +404,29 @@ internal object PieceTableProcessor {
             }
 
             leftLengthTest == centralPiece.offset -> {
-                val length = leftPiece.length + centralPiece.length
+                // The merge helpers take the DOCUMENT offset and the length of the central piece's
+                // own portion — they add the neighbor's length themselves. Passing the buffer offset
+                // and the combined length made the rebuilt piece start before the central piece and
+                // run past it, so it read a span of the buffer belonging to other pieces.
                 getLeftPieceTransaction(
                     leftModel,
                     indexOfLeftPiece,
                     centralModel,
                     indexOfCentralPiece,
-                    leftPiece.offset,
-                    length,
+                    centralModel.offsetInDocument,
+                    centralPiece.length,
                     marks
                 )
             }
 
             centralLengthTest == rightPiece.offset -> {
-                val length = centralPiece.length + rightPiece.length
+                // Document offset and the central piece's own length — see the note above.
                 getRightPieceTransaction(
                     rightModel,
                     centralModel,
                     indexOfCentralPiece,
-                    centralPiece.offset,
-                    length,
+                    centralModel.offsetInDocument,
+                    centralPiece.length,
                     marks
                 )
             }
