@@ -159,9 +159,15 @@ internal object MultiPieceFormatTransaction {
         }
 
         val startIndex = if (left == null) 0 else 1
+        // A merge coalesces with the last INSERTED piece, which is only the document-previous piece
+        // while every element so far produced one. An element that needs no transaction (its marks
+        // already match) is left in place, so merging across it would splice two pieces that are
+        // buffer-adjacent but have that untouched piece between them in the document — the merged
+        // piece then carries its text to the wrong position and reorders the document.
+        var previousProducedPieces = left != null
         for (i in startIndex until centralElements.size) {
             val currentModel = centralElements[i]
-            val lastPiece = transactionManager.getLastInsertedPiece()
+            val lastPiece = if (previousProducedPieces) transactionManager.getLastInsertedPiece() else null
             val finalMarks = TextEditorMarkProcessor.process(
                 currentModel.piece.marks,
                 prevFormatMarks,
@@ -189,7 +195,12 @@ internal object MultiPieceFormatTransaction {
                 Mark.areTheSame(
                     finalMarks,
                     currentModel.piece.marks
-                ) && adjustedRange.length == currentModel.pieceLength -> RichPieceTransaction.Empty
+                ) && adjustedRange.length == currentModel.pieceLength -> {
+                    // Untouched: it stays between the pieces around it, so nothing may merge across
+                    // it from here on.
+                    previousProducedPieces = false
+                    RichPieceTransaction.Empty
+                }
 
                 else -> {
                     transaction.getTransactionMarks(
@@ -205,11 +216,13 @@ internal object MultiPieceFormatTransaction {
 
             if (transactionMarks.insertAtIndex >= 0) {
                 transactionManager.add(transactionMarks)
+                previousProducedPieces = true
             }
         }
 
         if (right != null) {
-            val lastPiece = transactionManager.getLastInsertedPiece()
+            // Same rule for the trailing neighbor: only merge into it when the chain is unbroken.
+            val lastPiece = if (previousProducedPieces) transactionManager.getLastInsertedPiece() else null
 
             val transactionMarks = when {
                 lastPiece != null && canMergeWithPrevious(
