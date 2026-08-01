@@ -18,6 +18,8 @@ import com.jjrodcast.textkit.editor.core.parser.embedType
 import com.jjrodcast.textkit.editor.utils.fastForEach
 import com.jjrodcast.textkit.editor.core.piecetable.models.RichToken
 import com.jjrodcast.textkit.editor.core.transactions.TextEditorTransaction
+import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorAction
+import com.jjrodcast.textkit.editor.core.transactions.text.TextTransaction
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorSelectedMark
 import com.jjrodcast.textkit.editor.core.transactions.models.TextEditorTransactionType
 import com.jjrodcast.textkit.editor.models.MarkSearchType
@@ -353,7 +355,16 @@ class TextKitEditorManager(val configuration: TextKitConfiguration = createTextK
     /** Removes the placeholder at [range] (and its line break) → the block disappears from the JSON. */
     fun removeEmbedAt(range: TextRange): Boolean {
         if (range.length <= 0) return false
-        return transaction.delete(range.min, range.length)
+        // Routed through the text-removal path rather than deleting the pieces outright: the
+        // placeholder carries the line break that ends its own paragraph, and dropping that break
+        // raw merges the following paragraph into this one — stranding a following list item's
+        // decorator mid-line. That path already resolves decorators for the same window (#74, #82).
+        val action = TextEditorAction.TextRemoved(
+            offset = range.min,
+            length = range.length,
+            selection = TextRange(range.min),
+        )
+        return TextTransaction.onTextUpdated(action, this).first
     }
 
     /** The embed placeholder at document [offset], or null when [offset] is not on one. */
