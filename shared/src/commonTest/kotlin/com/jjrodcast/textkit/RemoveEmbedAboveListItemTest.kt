@@ -32,17 +32,22 @@ class RemoveEmbedAboveListItemTest {
         val editor = editorFrom("{}")
         editor.insertEmbed("table", TABLE, label = "T", at = TextRange(0))
         editor.insertEmbed("table", TABLE, label = "T", at = TextRange(0))
-        // Both placeholder lines become task items, so the first one's trailing break is the only
-        // thing separating the two markers.
-        editor.toListItem(TextRange(1, 3), TextEditorListItem.None, TextEditorListItem.CheckList)
-        assertEquals("$TABS-[] T\n$TABS-[] T", editor.text)
+        // Both placeholder lines become list items, so the first one's trailing break is the only
+        // thing separating the two markers. Marker text is platform-specific, so this asserts on
+        // the paragraph structure rather than on the rendered decorator.
+        editor.toListItem(TextRange(1, 3), TextEditorListItem.None, TextEditorListItem.BulletedList)
+        assertEquals(2, editor.getParagraphs().size, editor.text.replace("\n", "\\n").replace("\t", "\\t"))
+        assertTrue(editor.getParagraphs().all { it.children.first().decorator != null }, editor.text)
 
-        val embed = editor.embedAt(editor.text.indexOf('T', startIndex = 1) + 1)
-            ?: editor.embedAt(editor.text.indexOf('T'))
+        val embed = (0 until editor.text.length).firstNotNullOfOrNull { editor.embedAt(it) }
         editor.removeEmbedAt(embed!!.range)
 
         editor.assertNoMidlineDecorator()
-        assertEquals("$TABS-[] T", editor.text)
+        // One item is left, still carrying exactly one marker of its own.
+        val paragraphs = editor.getParagraphs()
+        assertEquals(1, paragraphs.size, editor.text.replace("\n", "\\n").replace("\t", "\\t"))
+        assertEquals(1, paragraphs.single().children.count { it.decorator != null }, editor.text)
+        assertTrue(editor.text.endsWith("T"), editor.text.replace("\t", "\\t"))
         val once = editor.toJson()
         assertEquals(once, editorFrom(once).toJson(), "export is not a fixed point")
     }
