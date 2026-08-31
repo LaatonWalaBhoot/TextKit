@@ -205,7 +205,11 @@ fun TextKitEditorOutlined(
         textStyle = TextStyle(color = TextKitTheme.colors.onSurface),
         cursorBrush = SolidColor(TextKitTheme.colors.primary),
         decorationBox = { innerTextField ->
-            Box {
+            // Propagate the incoming minimum constraints: when the caller sizes the editor
+            // (Modifier.weight in a Column, fillMaxHeight, a fixed size), the decoration must fill
+            // that area — a plain Box measures its children loosely, so the outlined container
+            // wrapped its placeholder in a corner of the allotted space instead (issue #143).
+            Box(propagateMinConstraints = true) {
                 OutlinedTextFieldDefaults.DecorationBox(
                     value = state.textFieldValue.text,
                     innerTextField = innerTextField,
