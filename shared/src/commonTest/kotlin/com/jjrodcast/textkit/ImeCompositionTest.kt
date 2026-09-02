@@ -80,4 +80,13 @@ class ImeCompositionTest {
         assertNull(s.textFieldValue.composition)
         assertEquals(s.toJson(), editorFrom(s.toJson()).toJson())
     }
+
+    @Test
+    fun a_composition_only_update_is_not_swallowed() {
+        val s = state()
+        s.ime("nihao", 5, TextRange(0, 5))
+        // same text, same selection — only the composing region changes
+        s.ime("nihao", 5, TextRange(2, 5))
+        assertEquals(TextRange(2, 5), s.textFieldValue.composition)
+    }
 }

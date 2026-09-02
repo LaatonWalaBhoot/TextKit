@@ -1148,9 +1148,10 @@ class TextKitState(
         } else if (prevTextFieldValue.text.length < textFieldValue.text.length) {
             handleRemovingText()
         } else {
-            if (prevTextFieldValue.text == textFieldValue.text &&
-                prevTextFieldValue.selection != textFieldValue.selection
-            ) {
+            if (prevTextFieldValue.text == textFieldValue.text) {
+                // Same text: a selection move, or the IME adjusting only its composing region —
+                // both keep the value's identity (the copy below carries the incoming composition,
+                // so a composition-only update is never swallowed, #144).
                 // Update selection
                 val normalized = normalizeSelectionForListLayout(prevTextFieldValue.selection)
                 textFieldValue = prevTextFieldValue.copy(selection = normalized)
