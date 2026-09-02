@@ -13,6 +13,7 @@ import com.jjrodcast.textkit.editor.core.parser.HighlightMark
 import com.jjrodcast.textkit.editor.core.parser.ItalicMark
 import com.jjrodcast.textkit.editor.core.parser.LinkMark
 import com.jjrodcast.textkit.editor.core.parser.ListItem
+import com.jjrodcast.textkit.editor.core.parser.Mark
 import com.jjrodcast.textkit.editor.core.parser.OrderedList
 import com.jjrodcast.textkit.editor.core.parser.Paragraph
 import com.jjrodcast.textkit.editor.core.parser.StrikeMark
@@ -47,6 +48,15 @@ class MarkdownImportTest {
         assertEquals(1, assertIs<Heading>(doc.content[0]).attrs.level)
         assertEquals(6, assertIs<Heading>(doc.content[1]).attrs.level)
         assertEquals("One", (assertIs<Heading>(doc.content[0]).content.single() as Text).text)
+    }
+
+    @Test
+    fun lone_carriage_returns_are_line_endings_and_a_closing_br_is_not_a_break() {
+        val doc = parse("one\rtwo\r\nthree")
+        assertEquals(1, doc.content.size)
+        assertEquals("one two three", (assertIs<Paragraph>(doc.content[0]).content.single() as Text).text)
+        val p = firstParagraph("a</br>b")
+        assertEquals("ab", (p.content.single() as Text).text)
     }
 
     @Test
@@ -120,9 +130,9 @@ class MarkdownImportTest {
     @Test
     fun emphasis_marks_nest_and_combine() {
         val p = firstParagraph("**bold _both_** and ~~gone~~")
-        assertEquals(setOf<Any>(BoldMark()), (p.content[0] as Text).marks)
+        assertEquals(setOf<Mark>(BoldMark()), (p.content[0] as Text).marks)
         assertEquals(setOf(BoldMark(), ItalicMark()), (p.content[1] as Text).marks)
-        assertEquals(setOf<Any>(StrikeMark()), (p.content[3] as Text).marks)
+        assertEquals(setOf<Mark>(StrikeMark()), (p.content[3] as Text).marks)
     }
 
     @Test
@@ -142,8 +152,8 @@ class MarkdownImportTest {
     @Test
     fun the_html_fallbacks_restore_their_marks() {
         val p = firstParagraph("<u>under</u> and <mark>lit</mark>")
-        assertEquals(setOf<Any>(UnderlineMark()), (p.content[0] as Text).marks)
-        assertEquals(setOf<Any>(HighlightMark()), (p.content[2] as Text).marks)
+        assertEquals(setOf<Mark>(UnderlineMark()), (p.content[0] as Text).marks)
+        assertEquals(setOf<Mark>(HighlightMark()), (p.content[2] as Text).marks)
     }
 
     @Test

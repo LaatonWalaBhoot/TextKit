@@ -52,7 +52,7 @@ fun markdownToJson(markdown: String): String =
 internal class MarkdownParser {
 
     fun parse(markdown: String): TextEditorDocument =
-        TextEditorDocument(parseBlocks(markdown.replace("\r\n", "\n").split("\n")))
+        TextEditorDocument(parseBlocks(markdown.replace("\r\n", "\n").replace('\r', '\n').split("\n")))
 
     // ── Blocks ───────────────────────────────────────────────────────────────
 
@@ -411,7 +411,9 @@ internal class MarkdownParser {
         if (tag.isEmpty() || !(tag[0].isLetter() || tag[0] == '/')) return 0
 
         val name = tag.trimStart('/').substringBefore(' ').trimEnd('/').lowercase()
-        if (name == "br") {
+        // Only an opening/void <br> is a break; a stray closing </br> is invalid HTML and is
+        // stripped like any other unknown tag.
+        if (name == "br" && !tag.startsWith("/")) {
             flush()
             out += HardBreak(marks = marks)
             return tagEnd - i + 1
