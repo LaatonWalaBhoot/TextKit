@@ -1148,9 +1148,10 @@ class TextKitState(
         } else if (prevTextFieldValue.text.length < textFieldValue.text.length) {
             handleRemovingText()
         } else {
-            if (prevTextFieldValue.text == textFieldValue.text &&
-                prevTextFieldValue.selection != textFieldValue.selection
-            ) {
+            if (prevTextFieldValue.text == textFieldValue.text) {
+                // Same text: a selection move, or the IME adjusting only its composing region —
+                // both keep the value's identity (the copy below carries the incoming composition,
+                // so a composition-only update is never swallowed, #144).
                 // Update selection
                 val normalized = normalizeSelectionForListLayout(prevTextFieldValue.selection)
                 textFieldValue = prevTextFieldValue.copy(selection = normalized)
@@ -1165,8 +1166,11 @@ class TextKitState(
                 checkDecorator(textFieldValue.selection.min, textFieldValue.selection.max)
                 tokenState.refreshQuery(textFieldValue.text, selection)
             } else {
-                // Replacing the same length of characters using the clipboard
-                updateAnnotatedString(prevTextFieldValue.selection)
+                // Same length, different characters: a same-length replace (an IME committing
+                // one composed character over one pinyin letter, a same-length paste). This must
+                // reach the engine like any other edit — rebuilding the display from the old
+                // engine text silently discarded the replacement (#144).
+                handleReplacingText()
             }
         }
         prevTextFieldValue = TextFieldValue()
@@ -1334,7 +1338,14 @@ class TextKitState(
             start = selection.start.coerceIn(0, text.length),
             end = selection.end.coerceIn(0, text.length),
         )
-        textFieldValue = TextFieldValue(text = text, selection = coerced)
+        // The IME's composing region must survive the rebuild (#144): handing a value back without
+        // it cancels the composition, so every keystroke committed immediately and a CJK IME could
+        // never compose a word. It survives exactly when the engine settled on the text the IME
+        // produced — after an engine rewrite (a marker conversion, a caret clamp) the region no
+        // longer describes the document and is dropped, which tells the IME to restart cleanly.
+        val composition = prevTextFieldValue.composition
+            ?.takeIf { prevTextFieldValue.text == text && it.max <= text.length }
+        textFieldValue = TextFieldValue(text = text, selection = coerced, composition = composition)
         visualTransformation =
             VisualTransformation { _ -> TransformedText(annotatedString, editorOffsetMapping) }
     }
@@ -1479,13 +1490,24 @@ class TextKitState(
             isTyping -> {
                 val typedTextCount = prevTextFieldValue.text.length - textFieldValue.text.length
                 val start = prevTextFieldValue.selection.min - typedTextCount
-                val typedText = prevTextFieldValue.text.substring(start, start + typedTextCount)
-                TextEditorAction.TextAdded(
-                    text = typedText,
-                    marks = marks,
-                    offset = start,
-                    selection = prevTextFieldValue.selection
-                )
+                // The fast path assumes the new characters sit directly before the caret with the
+                // rest untouched. A composing IME breaks that shape (it rewrites its whole
+                // composed run), so the assumption is verified and anything else falls back to a
+                // content diff (#144).
+                val isInsertBeforeCaret = start >= 0 &&
+                    start + typedTextCount <= prevTextFieldValue.text.length &&
+                    prevTextFieldValue.text.removeRange(start, start + typedTextCount) == textFieldValue.text
+                if (isInsertBeforeCaret) {
+                    TextEditorAction.TextAdded(
+                        text = prevTextFieldValue.text.substring(start, start + typedTextCount),
+                        marks = marks,
+                        offset = start,
+                        selection = prevTextFieldValue.selection
+                    )
+                } else {
+                    contentDiffAction(textFieldValue.text, prevTextFieldValue.text, marks)
+                        ?: TextEditorAction.None
+                }
             }
 
             isUsingClipboard -> {
@@ -1526,13 +1548,7 @@ class TextKitState(
 
     private fun createRemoveAction(): TextEditorAction {
         return when {
-            isTyping -> {
-                TextEditorAction.TextRemoved(
-                    offset = prevTextFieldValue.selection.min,
-                    length = textFieldValue.text.length - prevTextFieldValue.text.length,
-                    selection = textFieldValue.selection
-                )
-            }
+            isTyping -> deletionOrDiff()
 
             isUsingClipboard -> {
                 val (offset, replacement) = replacementOverPriorSelection(
@@ -1557,10 +1573,83 @@ class TextKitState(
                 }
             }
 
-            else -> TextEditorAction.TextRemoved(
-                offset = prevTextFieldValue.selection.min,
-                length = textFieldValue.text.length - prevTextFieldValue.text.length,
+            else -> deletionOrDiff()
+        }
+    }
+
+    /**
+     * The shrink-path fast action: a deletion ending at the new caret. The shape is verified — a
+     * composing IME can shrink the text while also rewriting it (committing `你好` over `nihao`),
+     * which is a replace, not a deletion; that falls back to a content diff (#144).
+     */
+    private fun deletionOrDiff(): TextEditorAction {
+        val offset = prevTextFieldValue.selection.min
+        val length = textFieldValue.text.length - prevTextFieldValue.text.length
+        val isPureDeletion = offset >= 0 && length > 0 &&
+            offset + length <= textFieldValue.text.length &&
+            textFieldValue.text.removeRange(offset, offset + length) == prevTextFieldValue.text
+        if (isPureDeletion) {
+            return TextEditorAction.TextRemoved(
+                offset = offset,
+                length = length,
                 selection = textFieldValue.selection
+            )
+        }
+        return contentDiffAction(textFieldValue.text, prevTextFieldValue.text, lastMarks)
+            ?: TextEditorAction.None
+    }
+
+    /** Applies a same-length text replacement as its own discrete engine edit. */
+    private fun handleReplacingText() {
+        val action = contentDiffAction(textFieldValue.text, prevTextFieldValue.text, lastMarks) ?: return
+        recordBefore {
+            val (result, range) = TextTransaction.onTextUpdated(action, manager)
+            if (result) {
+                selection = range
+                updateAnnotatedString(selection)
+                tokenState.refreshQuery(textFieldValue.text, selection)
+                lastRangeSelection = TextRange.Zero
+                lastEmbedType = embedTypeAtCaret()
+            }
+            result
+        }
+    }
+
+    /**
+     * The single contiguous change between [oldText] and [newText] as an engine action, located by
+     * longest common prefix then suffix; null when the texts are equal. The fallback for every
+     * edit the caret-anchored fast paths cannot describe — above all an IME rewriting its
+     * composed run (#144).
+     */
+    private fun contentDiffAction(oldText: String, newText: String, marks: Set<Mark>): TextEditorAction? {
+        if (oldText == newText) return null
+        var prefix = 0
+        val maxPrefix = minOf(oldText.length, newText.length)
+        while (prefix < maxPrefix && oldText[prefix] == newText[prefix]) prefix++
+        var suffix = 0
+        val maxSuffix = minOf(oldText.length, newText.length) - prefix
+        while (suffix < maxSuffix &&
+            oldText[oldText.length - 1 - suffix] == newText[newText.length - 1 - suffix]
+        ) suffix++
+        val removeLength = oldText.length - prefix - suffix
+        val inserted = newText.substring(prefix, newText.length - suffix)
+        return when {
+            removeLength == 0 -> TextEditorAction.TextAdded(
+                text = inserted,
+                marks = marks,
+                offset = prefix,
+                selection = TextRange(prefix + inserted.length),
+            )
+            inserted.isEmpty() -> TextEditorAction.TextRemoved(
+                offset = prefix,
+                length = removeLength,
+                selection = TextRange(prefix),
+            )
+            else -> TextEditorAction.TextUpdated(
+                removeLength = removeLength,
+                text = inserted,
+                offset = prefix,
+                selection = TextRange(prefix + inserted.length),
             )
         }
     }
