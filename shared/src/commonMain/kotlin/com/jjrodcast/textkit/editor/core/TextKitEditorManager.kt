@@ -5,6 +5,7 @@ import com.jjrodcast.textkit.editor.core.history.EditorHistoryManager
 import com.jjrodcast.textkit.editor.core.history.HistorySnapshot
 import com.jjrodcast.textkit.editor.core.export.HtmlSerializer
 import com.jjrodcast.textkit.editor.core.export.MarkdownSerializer
+import com.jjrodcast.textkit.editor.core.markdown.markdownToJson
 import com.jjrodcast.textkit.editor.core.models.TextEditorModel
 import com.jjrodcast.textkit.editor.core.parser.EmbedTokenType
 import com.jjrodcast.textkit.editor.core.parser.Mark
@@ -107,6 +108,9 @@ class TextKitEditorManager(val configuration: TextKitConfiguration = createTextK
      * lossless format.
      */
     fun toMarkdown(): String = MarkdownSerializer().serialize(transaction.document)
+
+    /** Loads [markdown] as the document, converted through the same GFM subset [toMarkdown] emits. */
+    fun loadMarkdown(markdown: String, isViewer: Boolean = false) = load(markdownToJson(markdown), isViewer)
 
     val isViewer get() = transaction.isViewer
 

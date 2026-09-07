@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.em
 import com.jjrodcast.textkit.editor.components.TextEditorDecoratorItem
 import com.jjrodcast.textkit.editor.components.TextEditorListItem
 import com.jjrodcast.textkit.editor.core.TextKitEditorManager
+import com.jjrodcast.textkit.editor.core.markdown.markdownToJson
 import com.jjrodcast.textkit.editor.core.history.EditKind
 import com.jjrodcast.textkit.editor.core.parser.BoldMark
 import com.jjrodcast.textkit.editor.core.parser.HeadingLevels
@@ -481,6 +482,23 @@ class TextKitState(
      * [rememberTextKitState] accepts as `json`). Use it to persist the editor's contents.
      */
     fun toJson() = manager.toJson()
+
+    /**
+     * Replaces the whole document with [markdown], converted through the same GitHub Flavored
+     * Markdown subset [toMarkdown] emits (#142). Like loading a new document, the replacement
+     * resets the undo history — the snapshots undo restores are tied to the replaced document
+     * and are meaningless across a swap (the same rule `load` documents). The caret lands at the
+     * document start.
+     */
+    fun importMarkdown(markdown: String) {
+        manager.load(markdownToJson(markdown), configuration.viewerMode)
+        tokenState.dismiss()
+        selection = TextRange.Zero
+        updateAnnotatedString(selection)
+        lastRangeSelection = TextRange.Zero
+        lastEmbedType = embedTypeAtCaret()
+        syncHistoryAvailability()
+    }
 
     /**
      * Exports the current document as semantic HTML. Export only: the editor is still loaded from,
