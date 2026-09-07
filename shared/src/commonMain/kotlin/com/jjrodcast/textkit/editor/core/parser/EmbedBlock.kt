@@ -36,8 +36,9 @@ internal object EmbedTypes {
     const val Table = "table"
     const val Image = "image"
     const val Document = "document"
+    const val CodeBlock = "codeBlock"
 
-    val ALL: Set<String> = setOf(Table, Image, Document)
+    val ALL: Set<String> = setOf(Table, Image, Document, CodeBlock)
 
     fun isEmbed(type: String?): Boolean = type != null && type in ALL
 }
@@ -66,6 +67,20 @@ internal fun embedUrlOf(payload: String): String? = embedAttrOf(payload, "url")
 /** Reads `attrs.name` from an embed's raw JSON — a `document` node's display name. */
 internal fun embedNameOf(payload: String): String? = embedAttrOf(payload, "name")
 
+/** Reads `attrs.language` from an embed's raw JSON — a `codeBlock` node's info string. */
+internal fun embedLanguageOf(payload: String): String? = embedAttrOf(payload, "language")
+
+/**
+ * The verbatim code of a `codeBlock` embed: its content text nodes joined as-is. Null for a
+ * payload that is not valid JSON; empty content yields an empty string.
+ */
+internal fun embedCodeTextOf(payload: String): String? = runCatching {
+    (TEXT_EDITOR_JSON.parseToJsonElement(payload).jsonObject["content"] as? kotlinx.serialization.json.JsonArray)
+        .orEmpty()
+        .mapNotNull { it.jsonObject["text"]?.jsonPrimitive?.contentOrNull }
+        .joinToString(separator = "")
+}.getOrNull()
+
 /**
  * Reads one string attribute from an embed's raw JSON, or null when the payload has no attrs, no
  * such key, a blank value, or is not valid JSON at all — embeds are an opaque passthrough, so a
@@ -86,6 +101,7 @@ internal object EmbedLabels {
         EmbedTypes.Table -> "📊 Tabla $indexByType"
         EmbedTypes.Image -> "🖼 Imagen $indexByType"
         EmbedTypes.Document -> "📄 Documento $indexByType"
+        EmbedTypes.CodeBlock -> "⌨ Código $indexByType"
         else -> "⧉ $embedType $indexByType"
     }
 }
