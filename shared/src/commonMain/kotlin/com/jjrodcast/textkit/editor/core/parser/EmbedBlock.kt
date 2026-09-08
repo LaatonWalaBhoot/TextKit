@@ -71,8 +71,9 @@ internal fun embedNameOf(payload: String): String? = embedAttrOf(payload, "name"
 internal fun embedLanguageOf(payload: String): String? = embedAttrOf(payload, "language")
 
 /**
- * The verbatim code of a `codeBlock` embed: its content text nodes joined as-is. Null for a
- * payload that is not valid JSON; empty content yields an empty string.
+ * The verbatim code of a `codeBlock` embed: its content text nodes joined as-is. Null when the
+ * payload is not a JSON object of the expected shape (invalid JSON, or a top-level array or
+ * primitive); an object with empty or missing content yields an empty string.
  */
 internal fun embedCodeTextOf(payload: String): String? = runCatching {
     (TEXT_EDITOR_JSON.parseToJsonElement(payload).jsonObject["content"] as? kotlinx.serialization.json.JsonArray)

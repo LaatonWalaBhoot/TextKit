@@ -33,6 +33,14 @@ class CodeBlockTest {
     }
 
     @Test
+    fun an_indented_fence_still_opens_a_code_block() {
+        val doc = parse("  ```py\n  indented code\n  ```")
+        val embed = assertIs<EmbedBlock>(doc.content.single())
+        assertEquals("py", embedLanguageOf(embed.raw.toString()))
+        assertEquals("  indented code", embedCodeTextOf(embed.raw.toString()))
+    }
+
+    @Test
     fun an_unterminated_fence_runs_to_the_end() {
         val doc = parse("```\nno closer\nstill code")
         val embed = assertIs<EmbedBlock>(doc.content.single())

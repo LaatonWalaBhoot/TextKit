@@ -567,7 +567,8 @@ internal class MarkdownParser {
         val ORDERED = Regex("""^(\d+)[.)] (.*)$""")
         val IMAGE_LINE = Regex("""^!\[(.*)\]\((.*)\)\s*$""")
         val DELIMITER_ROW = Regex("""^\s*\|?[\s:\-|]*-[\s:\-|]*\|?\s*$""")
-        val CODE_FENCE = Regex("""^(```+)(.*)$""")
+        // CommonMark allows up to three leading spaces before a fence.
+        val CODE_FENCE = Regex("""^ {0,3}(```+)(.*)$""")
 
         /** One nesting level of the exporter's indented item content. */
         const val NESTED_INDENT = 4
