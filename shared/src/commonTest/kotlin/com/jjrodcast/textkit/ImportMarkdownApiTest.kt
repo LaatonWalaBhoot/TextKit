@@ -9,7 +9,8 @@ import kotlin.test.assertTrue
 
 /**
  * The explicit import API (#142, phase 2): [TextKitState.importMarkdown] replaces the whole
- * document — the scope the proposal settled on — as a single undoable step.
+ * document — the scope the proposal settled on. Like `load`, the swap resets the undo history:
+ * the snapshots undo restores are tied to the replaced document.
  */
 class ImportMarkdownApiTest {
 

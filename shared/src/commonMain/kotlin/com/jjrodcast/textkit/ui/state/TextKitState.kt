@@ -492,11 +492,16 @@ class TextKitState(
      */
     fun importMarkdown(markdown: String) {
         manager.load(markdownToJson(markdown), configuration.viewerMode)
+        // Everything anchored to the replaced document is reset: open popups, the pending token
+        // query, and the selection-derived formatting-bar state re-read at the new caret.
         tokenState.dismiss()
+        dismissLinkPopup()
+        dismissEmbedPopup()
         selection = TextRange.Zero
         updateAnnotatedString(selection)
         lastRangeSelection = TextRange.Zero
         lastEmbedType = embedTypeAtCaret()
+        readSelectionContext()
         syncHistoryAvailability()
     }
 
