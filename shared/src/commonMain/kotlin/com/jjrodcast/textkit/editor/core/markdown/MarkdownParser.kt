@@ -66,6 +66,8 @@ internal class MarkdownParser {
 
                 isTable(lines, i) -> i = parseTable(lines, i, blocks)
 
+                CODE_FENCE.matches(line) -> i = parseCodeFence(lines, i, blocks)
+
                 HEADING.matches(line) -> {
                     val (hashes, rest) = HEADING.find(line)!!.destructured
                     val level = hashes.length.coerceIn(HeadingLevels.H1, HeadingLevels.H6)
@@ -95,7 +97,7 @@ internal class MarkdownParser {
         while (i < lines.size) {
             val line = lines[i]
             if (line.isBlank() || HEADING.matches(line) || isQuote(line) ||
-                listMarker(line, indent = 0) != null || isTable(lines, i)
+                listMarker(line, indent = 0) != null || isTable(lines, i) || CODE_FENCE.matches(line)
             ) break
             run += line.trim()
             i++
@@ -276,6 +278,42 @@ internal class MarkdownParser {
         }
         cells += sb.toString().trim()
         return cells
+    }
+
+    /**
+     * A fenced code block: everything between the opening fence and a closing run of at least as
+     * many backticks is the code, verbatim — no inline parsing, no escapes, blank lines included.
+     * The info string on the opening fence becomes `attrs.language`. An unterminated fence runs to
+     * the end of the input (the CommonMark behavior).
+     */
+    private fun parseCodeFence(lines: List<String>, start: Int, blocks: MutableList<BaseParagraph>): Int {
+        val (fence, language) = CODE_FENCE.find(lines[start])!!.destructured
+        var i = start + 1
+        val code = mutableListOf<String>()
+        while (i < lines.size) {
+            val line = lines[i]
+            val close = CODE_FENCE.find(line)
+            if (close != null && close.groupValues[1].length >= fence.length && close.groupValues[2].isBlank()) {
+                i++
+                break
+            }
+            code += line
+            i++
+        }
+        val raw = buildJsonObject {
+            put("type", EmbedTypes.CodeBlock)
+            put("attrs", buildJsonObject { put("language", language.trim()) })
+            put("content", buildJsonArray {
+                if (code.isNotEmpty()) {
+                    add(buildJsonObject {
+                        put("type", "text")
+                        put("text", code.joinToString(separator = "\n"))
+                    })
+                }
+            })
+        }
+        blocks += EmbedBlock(embedType = EmbedTypes.CodeBlock, id = EmbedTypes.CodeBlock, raw = raw)
+        return i
     }
 
     // ── Embeds ───────────────────────────────────────────────────────────────
@@ -529,6 +567,8 @@ internal class MarkdownParser {
         val ORDERED = Regex("""^(\d+)[.)] (.*)$""")
         val IMAGE_LINE = Regex("""^!\[(.*)\]\((.*)\)\s*$""")
         val DELIMITER_ROW = Regex("""^\s*\|?[\s:\-|]*-[\s:\-|]*\|?\s*$""")
+        // CommonMark allows up to three leading spaces before a fence.
+        val CODE_FENCE = Regex("""^ {0,3}(```+)(.*)$""")
 
         /** One nesting level of the exporter's indented item content. */
         const val NESTED_INDENT = 4

@@ -155,6 +155,7 @@ internal class MarkdownSerializer : DocumentSerializer {
     private fun embed(block: EmbedBlock): String = when (block.embedType) {
         EmbedTypes.Table -> table(block.raw)
         EmbedTypes.Image -> image(block.raw)
+        EmbedTypes.CodeBlock -> codeFence(block.raw)
         else -> "<${Html.Div}${htmlAttr(Html.DataType, block.embedType)}${htmlAttr(Html.DataId, block.id)}></${Html.Div}>"
     }
 
@@ -185,6 +186,23 @@ internal class MarkdownSerializer : DocumentSerializer {
             .filterIsInstance<Paragraph>()
             .joinToString(separator = " ") { inline(it.content) }
             .replace("\n", " ")
+
+    /**
+     * A fenced code block. The code is emitted verbatim — no escaping, Markdown metacharacters
+     * included — because the fence suspends all inline parsing; the fence itself grows one
+     * backtick longer than the longest backtick run inside the code, so the content can never
+     * close it early. The `attrs.language` info string rides on the opening fence.
+     */
+    private fun codeFence(raw: JsonElement): String {
+        val code = raw.childNodes()
+            .mapNotNull { it.jsonObject["text"]?.jsonPrimitive?.contentOrNull }
+            .joinToString(separator = "")
+        val language = raw.jsonObject["attrs"]?.jsonObject?.get("language")?.jsonPrimitive?.contentOrNull.orEmpty()
+        val longestRun = Regex("`+").findAll(code).maxOfOrNull { it.value.length } ?: 0
+        val fence = Md.CodeFenceChar.repeat(maxOf(Md.MinCodeFence, longestRun + 1))
+        val body = if (code.isEmpty()) "" else "$code\n"
+        return "$fence$language\n$body$fence"
+    }
 
     private fun image(raw: JsonElement): String {
         val attrs = raw.jsonObject["attrs"]?.jsonObject
@@ -331,6 +349,8 @@ internal class MarkdownSerializer : DocumentSerializer {
         const val TableEdgeStart = "| "
         const val TableEdgeEnd = " |"
         const val TableDelimiter = "---"
+        const val CodeFenceChar = "`"
+        const val MinCodeFence = 3
     }
 
     /** Inline-HTML tag and attribute names used for the marks and alignment GFM cannot express. */

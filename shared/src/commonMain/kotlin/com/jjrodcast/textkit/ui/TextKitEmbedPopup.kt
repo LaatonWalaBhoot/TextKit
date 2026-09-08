@@ -53,6 +53,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import coil3.compose.SubcomposeAsyncImage
 import com.jjrodcast.textkit.editor.core.TextKitEditorManager
 import com.jjrodcast.textkit.editor.core.parser.EmbedTypes
+import com.jjrodcast.textkit.editor.core.parser.embedCodeTextOf
+import com.jjrodcast.textkit.editor.core.parser.embedLanguageOf
 import com.jjrodcast.textkit.editor.core.parser.embedNameOf
 import com.jjrodcast.textkit.editor.core.parser.embedUrlOf
 import com.jjrodcast.textkit.theme.TextKitTheme
@@ -286,6 +288,31 @@ private fun EmbedPopupContent(
                                 TextButton(onClick = { onOpenDocument(url) }) {
                                     Text(stringResource(Res.string.open_label))
                                 }
+                            }
+                        }
+                    }
+
+                    EmbedTypes.CodeBlock -> {
+                        val code = remember(embed.rawJson) { embedCodeTextOf(embed.rawJson).orEmpty() }
+                        val language = remember(embed.rawJson) { embedLanguageOf(embed.rawJson) }
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            if (language != null) {
+                                Text(
+                                    text = language,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextKitTheme.colors.onSurfaceVariant,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier.fillMaxWidth()
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                Text(
+                                    text = code,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    ),
+                                )
                             }
                         }
                     }
