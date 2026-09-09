@@ -6,6 +6,7 @@ import com.jjrodcast.textkit.editor.core.history.HistorySnapshot
 import com.jjrodcast.textkit.editor.core.export.HtmlSerializer
 import com.jjrodcast.textkit.editor.core.export.MarkdownSerializer
 import com.jjrodcast.textkit.editor.core.markdown.markdownToJson
+import com.jjrodcast.textkit.editor.core.html.htmlToJson
 import com.jjrodcast.textkit.editor.core.models.TextEditorModel
 import com.jjrodcast.textkit.editor.core.parser.EmbedTokenType
 import com.jjrodcast.textkit.editor.core.parser.Mark
@@ -111,6 +112,9 @@ class TextKitEditorManager(val configuration: TextKitConfiguration = createTextK
 
     /** Loads [markdown] as the document, converted through the same GFM subset [toMarkdown] emits. */
     fun loadMarkdown(markdown: String, isViewer: Boolean = false) = load(markdownToJson(markdown), isViewer)
+
+    /** Loads [html] as the document, converted through the same HTML subset [toHtml] emits (#44). */
+    fun loadHtml(html: String, isViewer: Boolean = false) = load(htmlToJson(html), isViewer)
 
     val isViewer get() = transaction.isViewer
 
