@@ -142,6 +142,16 @@ class HtmlImportTest {
     fun entities_decode_and_adjacent_runs_merge() {
         val p = firstParagraph("<p>a &amp; b &lt;c&gt; &#233; &#x41;</p>")
         assertEquals("a & b <c> é A", (p.content.single() as Text).text)
+        // supplementary-plane references need a surrogate pair, not a truncated char
+        assertEquals("😀", (firstParagraph("<p>&#x1F600;</p>").content.single() as Text).text)
+        // a lone surrogate reference is invalid and stays literal
+        assertEquals("&#xD800;", (firstParagraph("<p>&#xD800;</p>").content.single() as Text).text)
+    }
+
+    @Test
+    fun a_token_span_without_an_id_degrades_to_its_text() {
+        val p = firstParagraph("<p><span data-type=\"mention\">@ana</span></p>")
+        assertEquals("@ana", (p.content.single() as Text).text)
     }
 
     // ── Sanitization ─────────────────────────────────────────────────────────

@@ -48,8 +48,11 @@ import kotlinx.serialization.json.put
  * subset that exporter emits so its output round-trips, plus the synonyms and looseness real-world
  * HTML brings (`<b>`/`<i>`/`<del>`, unclosed `<p>`/`<li>`, tag soup, loose inline content).
  *
- * The import is **lossy but text-safe**: content is never dropped, only demoted. An unknown tag is
- * unwrapped around its content; loose inline content becomes a paragraph. And it is a sanitizer by
+ * The import is **lossy but text-safe**: rendered content is never dropped, only demoted. An
+ * unknown tag is unwrapped around its content; loose inline content becomes a paragraph. The
+ * deliberate exceptions are the elements whose content a browser never renders — `<script>`,
+ * `<style>` and inert `<template>` bodies — which are discarded whole, so the import matches what
+ * the user actually saw on the page. And it is a sanitizer by
  * construction (issue #44): the output is typed nodes, so markup can never pass through verbatim —
  * `<script>`/`<style>` bodies are discarded wholesale, event handlers have nowhere to live, an
  * unsafe-scheme `href` drops its link (the text stays, `ExportHtml.safeHref`'s rule inbound), an
@@ -212,11 +215,9 @@ internal class HtmlParser {
                 val decoded = when {
                     NAMED_ENTITIES.containsKey(entity) -> NAMED_ENTITIES.getValue(entity)
                     entity.startsWith("#x") || entity.startsWith("#X") ->
-                        entity.drop(2).toIntOrNull(16)?.takeIf { it in 1..0x10FFFF }
-                            ?.let { runCatching { it.toChar().toString() }.getOrNull() }
+                        entity.drop(2).toIntOrNull(16)?.let(::codePointToString)
                     entity.startsWith("#") ->
-                        entity.drop(1).toIntOrNull()?.takeIf { it in 1..0x10FFFF }
-                            ?.let { runCatching { it.toChar().toString() }.getOrNull() }
+                        entity.drop(1).toIntOrNull()?.let(::codePointToString)
                     else -> null
                 }
                 if (decoded != null) {
@@ -227,6 +228,22 @@ internal class HtmlParser {
                 }
             }
         }
+    }
+
+    /**
+     * The string for one Unicode code point — a surrogate pair for the supplementary planes,
+     * which `Int.toChar()` would truncate. Lone-surrogate and out-of-range values yield null.
+     */
+    private fun codePointToString(codePoint: Int): String? = when (codePoint) {
+        in 1..0xD7FF, in 0xE000..0xFFFF -> codePoint.toChar().toString()
+        in 0x10000..0x10FFFF -> {
+            val value = codePoint - 0x10000
+            charArrayOf(
+                ((value shr 10) + 0xD800).toChar(),
+                ((value and 0x3FF) + 0xDC00).toChar(),
+            ).concatToString()
+        }
+        else -> null
     }
 
     // ── Tree builder ─────────────────────────────────────────────────────────
@@ -487,10 +504,13 @@ internal class HtmlParser {
 
     private fun span(node: Element, marks: Set<Mark>): List<BaseText> {
         val dataType = node.attrs[DATA_TYPE]
-        if (dataType == MentionType.Mention || dataType == HashtagType.Hashtag) {
+        // A token needs an identity: without a non-blank data-id the span degrades to its plain
+        // text (the visible label, trigger char and all) instead of minting an id-less token.
+        val tokenId = node.attrs[DATA_ID]?.takeIf { it.isNotBlank() }
+        if ((dataType == MentionType.Mention || dataType == HashtagType.Hashtag) && tokenId != null) {
             val trigger = if (dataType == MentionType.Mention) MentionType.DEFAULT_MENTION_CHAR else HashtagType.DEFAULT_HASHTAG_CHAR
             val label = rawText(node).trim().removePrefix(trigger.toString())
-            val attrs = TokenAttrs(id = node.attrs[DATA_ID].orEmpty(), label = label)
+            val attrs = TokenAttrs(id = tokenId, label = label)
             return listOf(
                 if (dataType == MentionType.Mention) Mention(attrs = attrs, marks = marks)
                 else Hashtag(attrs = attrs, marks = marks)
