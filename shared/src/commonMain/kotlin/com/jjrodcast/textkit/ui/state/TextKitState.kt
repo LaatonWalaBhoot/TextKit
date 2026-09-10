@@ -45,6 +45,7 @@ import com.jjrodcast.textkit.editor.components.TextEditorDecoratorItem
 import com.jjrodcast.textkit.editor.components.TextEditorListItem
 import com.jjrodcast.textkit.editor.core.TextKitEditorManager
 import com.jjrodcast.textkit.editor.core.markdown.markdownToJson
+import com.jjrodcast.textkit.editor.core.html.htmlToJson
 import com.jjrodcast.textkit.editor.core.history.EditKind
 import com.jjrodcast.textkit.editor.core.parser.BoldMark
 import com.jjrodcast.textkit.editor.core.parser.HeadingLevels
@@ -491,7 +492,21 @@ class TextKitState(
      * document start.
      */
     fun importMarkdown(markdown: String) {
-        manager.load(markdownToJson(markdown), configuration.viewerMode)
+        importDocumentJson(markdownToJson(markdown))
+    }
+
+    /**
+     * Replaces the whole document with [html], converted through the same HTML subset [toHtml]
+     * emits (#44) — sanitized on the way in: scripts and styles are discarded, unsafe link and
+     * image schemes are dropped. Same contract as [importMarkdown]: like `load`, the swap resets
+     * the undo history, and the caret lands at the document start.
+     */
+    fun importHtml(html: String) {
+        importDocumentJson(htmlToJson(html))
+    }
+
+    private fun importDocumentJson(json: String) {
+        manager.load(json, configuration.viewerMode)
         // Everything anchored to the replaced document is reset: open popups, the pending token
         // query, and the selection-derived formatting-bar state re-read at the new caret.
         tokenState.dismiss()
