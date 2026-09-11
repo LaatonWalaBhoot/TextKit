@@ -289,13 +289,15 @@ internal class HtmlParser {
 
     // ── Block mapping ────────────────────────────────────────────────────────
 
-    private fun mapBlocks(nodes: List<Node>): List<BaseParagraph> {
+    private fun mapBlocks(nodes: List<Node>, marks: Set<Mark> = emptySet()): List<BaseParagraph> {
         val blocks = mutableListOf<BaseParagraph>()
         val looseInline = mutableListOf<Node>()
         fun flushLoose() {
-            val content = mapInline(looseInline, emptySet())
+            val content = mapInline(looseInline, marks)
             looseInline.clear()
-            if (content.isNotEmpty()) blocks += Paragraph(content = content)
+            // a run of nothing but breaks (Apple's trailing interchange <br>) is clipboard
+            // framing, not content
+            if (content.any { it !is HardBreak }) blocks += Paragraph(content = content)
         }
         nodes.forEach { node ->
             when {
@@ -303,7 +305,14 @@ internal class HtmlParser {
                 node is Element && node.name in DROPPED_ELEMENTS -> Unit
                 node is Element && node.name in BLOCK_TAGS -> {
                     flushLoose()
-                    blocks += mapBlock(node)
+                    blocks += mapBlock(node, marks)
+                }
+                // an inline-looking element that CONTAINS block children is a transparent
+                // container — Google Docs wraps whole documents in a styled <b> — whose cascade
+                // (which for that wrapper suppresses the bold its tag implies) flows down
+                node is Element && node.children.any { it is Element && it.name in BLOCK_TAGS } -> {
+                    flushLoose()
+                    blocks += mapBlocks(node.children, cascade(node, marks, tagMarkOf(node.name)))
                 }
                 // anything else — text, marks, unknown inline tags — is loose inline content that
                 // browsers wrap into an implicit paragraph
@@ -314,15 +323,25 @@ internal class HtmlParser {
         return blocks
     }
 
-    private fun mapBlock(element: Element): List<BaseParagraph> = when (element.name) {
-        "p" -> listOf(Paragraph(attrs = ParagraphAttrs(textAlign = alignOf(element)), content = mapInline(element.children, emptySet())))
+    /** The mark an inline tag implies by itself, before its style cascade is applied. */
+    private fun tagMarkOf(name: String): Mark? = when (name) {
+        "strong", "b" -> BoldMark()
+        "em", "i" -> ItalicMark()
+        "u", "ins" -> UnderlineMark()
+        "s", "del", "strike" -> StrikeMark()
+        "mark" -> HighlightMark()
+        else -> null
+    }
+
+    private fun mapBlock(element: Element, marks: Set<Mark> = emptySet()): List<BaseParagraph> = when (element.name) {
+        "p" -> listOf(Paragraph(attrs = ParagraphAttrs(textAlign = alignOf(element)), content = mapInline(element.children, marks)))
 
         "h1", "h2", "h3", "h4", "h5", "h6" -> {
             val level = element.name.drop(1).toInt().coerceIn(HeadingLevels.H1, HeadingLevels.H6)
-            listOf(Heading(attrs = HeadingAttrs(level = level, textAlign = alignOf(element)), content = mapInline(element.children, emptySet())))
+            listOf(Heading(attrs = HeadingAttrs(level = level, textAlign = alignOf(element)), content = mapInline(element.children, marks)))
         }
 
-        "blockquote" -> listOf(Blockquote(content = mapBlocks(element.children)))
+        "blockquote" -> listOf(Blockquote(content = mapBlocks(element.children, marks)))
 
         "ul" ->
             if (element.attrs[DATA_TYPE] == TASK_LIST_TYPE) listOf(taskList(element))
@@ -356,11 +375,11 @@ internal class HtmlParser {
                 )
             } else {
                 // a plain div is a transparent container
-                mapBlocks(element.children)
+                mapBlocks(element.children, marks)
             }
         }
 
-        else -> mapBlocks(element.children)
+        else -> mapBlocks(element.children, marks)
     }
 
     private fun listItems(list: Element): List<BaseText> =
@@ -483,19 +502,19 @@ internal class HtmlParser {
                 is Element -> when (node.name) {
                     in DROPPED_ELEMENTS -> Unit
                     "br" -> out += HardBreak(marks = marks)
-                    "strong", "b" -> out += mapInline(node.children, marks + BoldMark())
-                    "em", "i" -> out += mapInline(node.children, marks + ItalicMark())
-                    "u", "ins" -> out += mapInline(node.children, marks + UnderlineMark())
-                    "s", "del", "strike" -> out += mapInline(node.children, marks + StrikeMark())
-                    "mark" -> out += mapInline(node.children, marks + HighlightMark())
+                    "strong", "b" -> out += mapInline(node.children, cascade(node, marks, BoldMark()))
+                    "em", "i" -> out += mapInline(node.children, cascade(node, marks, ItalicMark()))
+                    "u", "ins" -> out += mapInline(node.children, cascade(node, marks, UnderlineMark()))
+                    "s", "del", "strike" -> out += mapInline(node.children, cascade(node, marks, StrikeMark()))
+                    "mark" -> out += mapInline(node.children, cascade(node, marks, HighlightMark()))
                     "a" -> {
                         // an unsafe scheme drops the link and keeps the text — safeHref inbound
                         val href = node.attrs["href"]?.let { ExportHtml.safeHref(it) }
                         val linked = if (href != null) marks + LinkMark(LinkAttrs(href = href)) else marks
-                        out += mapInline(node.children, linked)
+                        out += mapInline(node.children, cascade(node, linked, null))
                     }
                     "span" -> out += span(node, marks)
-                    else -> out += mapInline(node.children, marks)
+                    else -> out += mapInline(node.children, cascade(node, marks, null))
                 }
             }
         }
@@ -516,27 +535,63 @@ internal class HtmlParser {
                 else Hashtag(attrs = attrs, marks = marks)
             )
         }
-        val styled = node.attrs["style"]?.let { textStyleFrom(it) }
-        return mapInline(node.children, if (styled != null) marks + styled else marks)
+        return mapInline(node.children, cascade(node, marks, null))
     }
 
-    /** Re-parses a `style` attribute's `color`/`font-size` into a validated [TextStyleMark] —
-     *  values go through the same rules the export applies, so nothing unvetted is carried. */
-    private fun textStyleFrom(style: String): TextStyleMark? {
+    /**
+     * The marks in effect inside [element]: the inherited set, the element's own tag semantics
+     * ([tagMark]), and its `style` declarations applied CSS-cascade style — a declaration both
+     * adds and *overrides*, so Google Docs' `<b style="font-weight:normal">` document wrapper
+     * bolds nothing, and a `font-weight:400` span un-bolds inherited bold (#152).
+     */
+    private fun cascade(element: Element, inherited: Set<Mark>, tagMark: Mark?): Set<Mark> {
+        val style = element.attrs["style"]
+        var marks = if (tagMark != null) inherited + tagMark else inherited
+        if (style == null) return marks
         var color: String? = null
         var fontSize = TextStyleAttrs.UNSET_FONT_SIZE
         style.split(';').forEach { declaration ->
             val key = declaration.substringBefore(':').trim().lowercase()
-            val value = declaration.substringAfter(':', "").trim()
+            val value = declaration.substringAfter(':', "").trim().lowercase()
             when (key) {
-                ExportHtml.COLOR -> color = ExportHtml.safeColor(value)
-                ExportHtml.FONT_SIZE -> fontSize = value.removeSuffix("px").trim().toIntOrNull()
-                    ?.takeIf { it in 1..MAX_FONT_SIZE } ?: fontSize
+                "font-weight" -> marks = when {
+                    value == "bold" || value == "bolder" || (value.toIntOrNull() ?: 0) >= BOLD_WEIGHT ->
+                        marks + BoldMark()
+                    value == "normal" || value == "lighter" || value.toIntOrNull() != null ->
+                        marks - BoldMark()
+                    else -> marks
+                }
+                "font-style" -> marks = when (value) {
+                    "italic", "oblique" -> marks + ItalicMark()
+                    "normal" -> marks - ItalicMark()
+                    else -> marks
+                }
+                "text-decoration", "text-decoration-line" -> {
+                    if ("underline" in value) marks = marks + UnderlineMark()
+                    if ("line-through" in value) marks = marks + StrikeMark()
+                    if (value == "none") marks = marks - UnderlineMark() - StrikeMark()
+                }
+                // any explicit non-transparent background reads as a highlight
+                "background-color" -> if (value != "transparent" && ExportHtml.safeColor(value) != null) {
+                    marks = marks + HighlightMark()
+                }
+                ExportHtml.COLOR -> color = ExportHtml.safeColor(value)?.takeIf { it !in DEFAULT_TEXT_COLORS }
+                ExportHtml.FONT_SIZE -> fontSize = parseFontSize(value) ?: fontSize
             }
         }
-        if (color == null && fontSize == TextStyleAttrs.UNSET_FONT_SIZE) return null
-        return TextStyleMark(TextStyleAttrs(color = color ?: "", fontSize = fontSize))
+        if (color != null || fontSize != TextStyleAttrs.UNSET_FONT_SIZE) {
+            marks = marks.filterNotTo(mutableSetOf()) { it is TextStyleMark } +
+                TextStyleMark(TextStyleAttrs(color = color ?: "", fontSize = fontSize))
+        }
+        return marks
     }
+
+    /** A `font-size` in px or pt (Google Docs emits pt, with float noise) as whole pixels. */
+    private fun parseFontSize(value: String): Int? = when {
+        value.endsWith("px") -> value.removeSuffix("px").trim().toDoubleOrNull()
+        value.endsWith("pt") -> value.removeSuffix("pt").trim().toDoubleOrNull()?.times(PX_PER_PT)
+        else -> null
+    }?.let { kotlin.math.round(it).toInt() }?.takeIf { it in 1..MAX_FONT_SIZE }
 
     private fun alignOf(element: Element): TextAlign {
         val style = element.attrs["style"] ?: return TextAlign.Left
@@ -578,7 +633,18 @@ internal class HtmlParser {
         const val LANGUAGE_CLASS_PREFIX = "language-"
         const val MAX_ENTITY_LENGTH = 12
         const val MAX_FONT_SIZE = 512
+        const val BOLD_WEIGHT = 600
+        const val PX_PER_PT = 4.0 / 3.0
 
+        /**
+         * Colors treated as "no color set": Google Docs stamps `color:#000000` on every span,
+         * styled or not, so importing it verbatim would coat whole pastes in explicit black —
+         * wrong in dark themes and pure noise in the document.
+         */
+        val DEFAULT_TEXT_COLORS = setOf("#000000", "#000")
+
+        /** The named entities that show up in real clipboard HTML (#152) — punctuation and
+         *  symbols producers substitute for typed characters — plus the XML five. */
         val NAMED_ENTITIES = mapOf(
             "amp" to "&",
             "lt" to "<",
@@ -586,6 +652,23 @@ internal class HtmlParser {
             "quot" to "\"",
             "apos" to "'",
             "nbsp" to " ",
+            "rsquo" to "\u2019",
+            "lsquo" to "\u2018",
+            "rdquo" to "\u201D",
+            "ldquo" to "\u201C",
+            "ndash" to "\u2013",
+            "mdash" to "\u2014",
+            "hellip" to "\u2026",
+            "middot" to "\u00B7",
+            "bull" to "\u2022",
+            "deg" to "\u00B0",
+            "copy" to "\u00A9",
+            "reg" to "\u00AE",
+            "trade" to "\u2122",
+            "times" to "\u00D7",
+            "laquo" to "\u00AB",
+            "raquo" to "\u00BB",
+            "shy" to "",
         )
 
         val RAW_TEXT_ELEMENTS = setOf("script", "style")
