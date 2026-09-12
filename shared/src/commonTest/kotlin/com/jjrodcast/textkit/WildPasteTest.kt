@@ -107,4 +107,38 @@ class WildPasteTest {
         assertTrue(e.text.contains("Experience"))
         assertEquals(e.toJson(), editorFrom(e.toJson()).toJson())
     }
+
+    @Test
+    fun medium_article_paste_keeps_structure_without_the_site_theme() {
+        val doc = HtmlParser().parse(PasteFixtures.MEDIUM_ARTICLE)
+        val texts = allTexts(doc)
+        val text = texts.joinToString(separator = " ") { it.text }
+
+        // structure and content survive the div soup
+        assertTrue(doc.content.filterIsInstance<Heading>().size >= 2, "title and subtitle headings must survive")
+        for (phrase in listOf(
+            "What Should Programmers Do While the AI Writes Code?",
+            "Most every programmer is suffering the same growing pains right now.",
+        )) {
+            assertTrue(phrase in text, "'$phrase' must survive the import")
+        }
+
+        // the site theme must not become authored formatting: computed styles ride on every
+        // container (rgb(36,36,36), 20px), and honoring them would coat the whole paste
+        val body = texts.first { "growing pains" in it.text }
+        assertTrue(body.marks.none { it is TextStyleMark }, "container theme styles must not import, got ${body.marks}")
+
+        // genuinely inline formatting still reads: Medium emphasizes with <em>
+        assertTrue(texts.any { t -> t.marks.any { it is ItalicMark } }, "em spans must read as italic")
+
+        // svg icon chrome contributes no text
+        assertTrue("Press enter or click" in text, "figcaption prose is kept")
+    }
+
+    @Test
+    fun the_medium_fixture_imports_loads_and_round_trips() {
+        val e = editorFrom(htmlToJson(PasteFixtures.MEDIUM_ARTICLE))
+        assertTrue(e.text.contains("growing pains"))
+        assertEquals(e.toJson(), editorFrom(e.toJson()).toJson())
+    }
 }

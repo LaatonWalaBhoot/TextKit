@@ -307,12 +307,15 @@ internal class HtmlParser {
                     flushLoose()
                     blocks += mapBlock(node, marks)
                 }
-                // an inline-looking element that CONTAINS block children is a transparent
-                // container — Google Docs wraps whole documents in a styled <b> — whose cascade
-                // (which for that wrapper suppresses the bold its tag implies) flows down
+                // an element that CONTAINS block children is a transparent container. An INLINE
+                // container's cascade flows down — Google Docs wraps whole documents in a styled
+                // <b> whose font-weight:normal suppresses the bold its tag implies. A block-level
+                // container's styles do NOT: a browser copy inlines the page's COMPUTED style onto
+                // every div and section, and honoring that would coat the paste in the site theme.
                 node is Element && node.children.any { it is Element && it.name in BLOCK_TAGS } -> {
                     flushLoose()
-                    blocks += mapBlocks(node.children, cascade(node, marks, tagMarkOf(node.name)))
+                    val inherited = if (node.name in INLINE_TAGS) cascade(node, marks, tagMarkOf(node.name)) else marks
+                    blocks += mapBlocks(node.children, inherited)
                 }
                 // anything else — text, marks, unknown inline tags — is loose inline content that
                 // browsers wrap into an implicit paragraph
@@ -572,10 +575,10 @@ internal class HtmlParser {
                     if (value == "none") marks = marks - UnderlineMark() - StrikeMark()
                 }
                 // any explicit non-transparent background reads as a highlight
-                "background-color" -> if (value != "transparent" && ExportHtml.safeColor(value) != null) {
+                "background-color" -> if (value != "transparent" && ExportHtml.safeColor(hexOf(value)) != null) {
                     marks = marks + HighlightMark()
                 }
-                ExportHtml.COLOR -> color = ExportHtml.safeColor(value)?.takeIf { it !in DEFAULT_TEXT_COLORS }
+                ExportHtml.COLOR -> color = ExportHtml.safeColor(hexOf(value))?.takeIf { it !in DEFAULT_TEXT_COLORS }
                 ExportHtml.FONT_SIZE -> fontSize = parseFontSize(value) ?: fontSize
             }
         }
@@ -584,6 +587,20 @@ internal class HtmlParser {
                 TextStyleMark(TextStyleAttrs(color = color ?: "", fontSize = fontSize))
         }
         return marks
+    }
+
+    /** [value] with an `rgb()`/`rgba()` form converted to hex — browser copies inline computed
+     *  styles, which always come back as `rgb(36, 36, 36)` — passed through otherwise. */
+    private fun hexOf(value: String): String {
+        val match = RGB_COLOR.find(value) ?: return value
+        val channels = match.groupValues[1].split(',').map { it.trim().toIntOrNull() ?: return value }
+        if (channels.size < 3 || channels.any { it !in 0..255 }) return value
+        return buildString {
+            append('#')
+            channels.take(3).forEach { channel ->
+                append(channel.toString(16).padStart(2, '0'))
+            }
+        }
     }
 
     /** A `font-size` in px or pt (Google Docs emits pt, with float noise) as whole pixels. */
@@ -672,13 +689,15 @@ internal class HtmlParser {
         )
 
         val RAW_TEXT_ELEMENTS = setOf("script", "style")
-        val DROPPED_ELEMENTS = setOf("script", "style", "head", "title", "template")
+        val DROPPED_ELEMENTS = setOf("script", "style", "head", "title", "template", "svg")
         val VOID_ELEMENTS = setOf("br", "img", "input", "hr", "meta", "link", "col", "area", "base", "embed", "source", "track", "wbr")
         val BLOCK_TAGS = setOf(
             "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "blockquote",
             "table", "img", "pre", "div",
         )
         val LIST_CONTAINER_TAGS = setOf("ul", "ol")
+        val INLINE_TAGS = setOf("span", "a", "b", "strong", "i", "em", "u", "ins", "s", "del", "strike", "mark", "font", "sub", "sup", "code", "small")
+        val RGB_COLOR = Regex("""^rgba?\(([^)]+)\)$""")
         val CELL_TAGS = setOf("td", "th")
         val TABLE_SECTION_TAGS = setOf("thead", "tbody", "tfoot")
         val WHITESPACE_RUN = Regex("""\s+""")
